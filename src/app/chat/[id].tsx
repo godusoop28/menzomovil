@@ -3,10 +3,11 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, KeyboardAvoidingView, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, FlatList, KeyboardAvoidingView, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Image } from 'expo-image';
 
 import { ChatBubble } from '@/components/ChatBubble';
+import { MenzoImageBackground } from '@/components/common/MenzoImageBackground';
 import { EmptyState } from '@/components/EmptyState';
 import { IconButton } from '@/components/IconButton';
 import { ScreenContainer } from '@/components/ScreenContainer';
@@ -28,6 +29,8 @@ export default function ChatDetailScreen() {
   const listRef = useRef<FlatList<Message>>(null);
   const [draft, setDraft] = useState('');
   const [pendingImage, setPendingImage] = useState<string | undefined>();
+  const [busyCover, setBusyCover] = useState(false);
+  const [busyBackground, setBusyBackground] = useState(false);
 
   const room = findRoom(state.social, id);
   const isDirect = room?.type === 'direct';
@@ -51,6 +54,7 @@ export default function ChatDetailScreen() {
   }, [actions, id]);
 
   const headerTitle = isDirect ? room?.peer?.displayName ?? 'Conversación' : room?.name ?? 'Conversación';
+  const headerOnline = isDirect ? !!room?.peer?.isOnline : !!room && room.onlineCount > 0;
   const headerSubtitle = isDirect
     ? room?.peer?.isOnline
       ? 'En línea'
@@ -72,6 +76,46 @@ export default function ChatDetailScreen() {
       setPendingImage(dest);
     } catch {
       setPendingImage(result.assets[0].uri);
+    }
+  }
+
+  async function pickRoomCover() {
+    if (!id) return;
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) return;
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [16, 9], quality: 0.85 });
+    if (result.canceled || !result.assets?.[0]) return;
+    setBusyCover(true);
+    try {
+      const dir = `${FileSystem.documentDirectory}menzo-room-covers/`;
+      await FileSystem.makeDirectoryAsync(dir, { intermediates: true }).catch(() => {});
+      const dest = `${dir}cover-${Date.now()}.jpg`;
+      await FileSystem.copyAsync({ from: result.assets[0].uri, to: dest });
+      await actions.updateRoomCover(id, dest);
+    } catch (error) {
+      console.warn('[menzo/api] pickRoomCover failed', error);
+    } finally {
+      setBusyCover(false);
+    }
+  }
+
+  async function pickRoomBackground() {
+    if (!id) return;
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) return;
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.85 });
+    if (result.canceled || !result.assets?.[0]) return;
+    setBusyBackground(true);
+    try {
+      const dir = `${FileSystem.documentDirectory}menzo-room-backgrounds/`;
+      await FileSystem.makeDirectoryAsync(dir, { intermediates: true }).catch(() => {});
+      const dest = `${dir}background-${Date.now()}.jpg`;
+      await FileSystem.copyAsync({ from: result.assets[0].uri, to: dest });
+      await actions.updateRoomBackground(id, dest);
+    } catch (error) {
+      console.warn('[menzo/api] pickRoomBackground failed', error);
+    } finally {
+      setBusyBackground(false);
     }
   }
 
@@ -97,43 +141,75 @@ export default function ChatDetailScreen() {
     );
   }
 
+  const messagesList =
+    messages.length === 0 ? (
+      <EmptyState
+        title="Aún no hay mensajes aquí"
+        description="Sé el primero en escribir algo."
+        image={menzoAssets.illustrations.chat}
+      />
+    ) : (
+      <FlatList
+        ref={listRef}
+        data={messages}
+        keyExtractor={(m) => m.id}
+        contentContainerStyle={styles.list}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.textPrimary} />}
+        renderItem={({ item, index }) => (
+          <ChatBubble
+            message={item}
+            author={findUser(state.social, item.authorId)}
+            isOwn={item.authorId === LOCAL_USER_ID}
+            showAvatar={index === 0 || messages[index - 1].authorId !== item.authorId}
+          />
+        )}
+        onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
+      />
+    );
+
   return (
     <ScreenContainer edges={['top', 'bottom']}>
-      <View style={styles.header}>
+      <View style={[styles.header, room.coverUri && styles.headerNoBorder]}>
+        {!!room.coverUri && (
+          <Image source={{ uri: room.coverUri }} style={StyleSheet.absoluteFill} contentFit="cover" />
+        )}
+        {!!room.coverUri && <View style={[StyleSheet.absoluteFill, styles.headerOverlay]} />}
         <IconButton name="chevron-back" label="Volver" onPress={() => router.back()} />
         <View style={styles.headerText}>
           <Text style={styles.headerTitle} numberOfLines={1}>
             {headerTitle}
           </Text>
-          {!!headerSubtitle && <Text style={styles.headerSubtitle}>{headerSubtitle}</Text>}
+          {!!headerSubtitle && (
+            <Text style={[styles.headerSubtitle, !headerOnline && styles.headerSubtitleOffline]}>{headerSubtitle}</Text>
+          )}
         </View>
-        <View style={{ width: 44 }} />
+        <View style={styles.headerActions}>
+          <Pressable
+            onPress={pickRoomCover}
+            disabled={busyCover}
+            accessibilityRole="button"
+            accessibilityLabel="Cambiar portada de la sala"
+            style={styles.headerIconButton}>
+            {busyCover ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Ionicons name="image-outline" size={16} color="#FFFFFF" />}
+          </Pressable>
+          <Pressable
+            onPress={pickRoomBackground}
+            disabled={busyBackground}
+            accessibilityRole="button"
+            accessibilityLabel="Cambiar fondo de la sala"
+            style={styles.headerIconButton}>
+            {busyBackground ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Ionicons name="color-palette-outline" size={16} color="#FFFFFF" />}
+          </Pressable>
+        </View>
       </View>
 
       <KeyboardAvoidingView behavior={behavior} style={styles.flex} keyboardVerticalOffset={90}>
-        {messages.length === 0 ? (
-          <EmptyState
-            title="Aún no hay mensajes aquí"
-            description="Sé el primero en escribir algo."
-            image={menzoAssets.illustrations.chat}
-          />
+        {room.backgroundUri ? (
+          <MenzoImageBackground source={{ uri: room.backgroundUri }} style={styles.flex}>
+            {messagesList}
+          </MenzoImageBackground>
         ) : (
-          <FlatList
-            ref={listRef}
-            data={messages}
-            keyExtractor={(m) => m.id}
-            contentContainerStyle={styles.list}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.textPrimary} />}
-            renderItem={({ item, index }) => (
-              <ChatBubble
-                message={item}
-                author={findUser(state.social, item.authorId)}
-                isOwn={item.authorId === LOCAL_USER_ID}
-                showAvatar={index === 0 || messages[index - 1].authorId !== item.authorId}
-              />
-            )}
-            onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
-          />
+          messagesList
         )}
 
         {!!pendingImage && (
@@ -179,10 +255,23 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: Colors.borderSoft,
+    overflow: 'hidden',
+  },
+  headerNoBorder: { borderBottomColor: 'transparent' },
+  headerOverlay: { backgroundColor: 'rgba(7,9,13,0.45)' },
+  headerActions: { flexDirection: 'row', gap: Spacing.xs },
+  headerIconButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.35)',
   },
   headerText: { flex: 1, alignItems: 'center' },
   headerTitle: { ...Typography.h3, color: Colors.textPrimary },
   headerSubtitle: { ...Typography.caption, color: Colors.green },
+  headerSubtitleOffline: { color: Colors.textMuted },
   list: { padding: Spacing.lg, gap: Spacing.sm },
   previewRow: {
     flexDirection: 'row',

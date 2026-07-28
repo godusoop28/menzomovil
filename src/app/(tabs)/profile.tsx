@@ -15,6 +15,7 @@ import { WallMessageCard } from '@/components/WallMessageCard';
 import { useAppState } from '@/hooks/useAppState';
 import { useHaptics } from '@/hooks/useHaptics';
 import { useKeyboardBehavior } from '@/hooks/useKeyboardOffset';
+import { getMyRealId } from '@/services/api';
 import { LOCAL_USER_ID } from '@/store/localUser';
 import { postsByAuthor, savedPosts, wallMessagesForProfile } from '@/store/selectors';
 import { menzoAssets } from '@/constants/assets';
@@ -67,8 +68,18 @@ export default function OwnProfileScreen() {
     success();
   }
 
+  const customBackgroundImage = profile.backgroundUri
+    ? { uri: profile.backgroundUri }
+    : profile.backgroundColor
+      ? undefined
+      : menzoAssets.backgrounds.profile;
+
   return (
-    <ScreenContainer edges={['top']} backgroundImage={menzoAssets.backgrounds.profile} backgroundImageOverlay={0.78}>
+    <ScreenContainer
+      edges={['top']}
+      backgroundImage={customBackgroundImage}
+      backgroundImageOverlay={profile.backgroundUri ? 0.72 : 0.78}
+      background={!customBackgroundImage ? profile.backgroundColor : undefined}>
       <AppHeader
         onMenuPress={drawer.open}
         right={<IconButton name="settings-outline" label="Configuración" onPress={() => router.push('/settings')} />}
@@ -82,7 +93,7 @@ export default function OwnProfileScreen() {
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.textPrimary} />
           }>
-          {localUserDemo && <ProfileHeader user={localUserDemo} isOwnProfile />}
+          {localUserDemo && <ProfileHeader user={localUserDemo} isOwnProfile statsUserId={getMyRealId() ?? undefined} />}
 
           <View style={styles.tabsWrap}>
             <SegmentedTabs

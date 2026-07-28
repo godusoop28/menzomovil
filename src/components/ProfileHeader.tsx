@@ -21,11 +21,14 @@ type Props = {
   onToggleFollow?: () => void;
   onMessage?: () => void;
   hideActions?: boolean;
+  /** Id real (no alias) para navegar a las listas de seguidores/siguiendo. */
+  statsUserId?: string;
 };
 
-export function ProfileHeader({ user, isOwnProfile, isFollowing, onToggleFollow, onMessage, hideActions }: Props) {
+export function ProfileHeader({ user, isOwnProfile, isFollowing, onToggleFollow, onMessage, hideActions, statsUserId }: Props) {
   const aura = auraById(user.aura);
   const xpToNext = 500 - (user.xp % 500);
+  const isFriend = !isOwnProfile && !!isFollowing && !!user.followsMe;
 
   return (
     <View style={styles.wrap}>
@@ -48,6 +51,7 @@ export function ProfileHeader({ user, isOwnProfile, isFollowing, onToggleFollow,
             size={92}
             showOnline
             online={user.isOnline}
+            level={user.level}
           />
           {hideActions ? null : isOwnProfile ? (
             <SecondaryButton label="Editar perfil" onPress={() => router.push('/edit-profile')} />
@@ -67,7 +71,14 @@ export function ProfileHeader({ user, isOwnProfile, isFollowing, onToggleFollow,
           )}
         </View>
 
-        <Text style={styles.name}>{user.displayName}</Text>
+        <View style={styles.nameRow}>
+          <Text style={styles.name}>{user.displayName}</Text>
+          {isFriend && (
+            <View style={styles.friendBadge}>
+              <Text style={styles.friendBadgeLabel}>Amigos</Text>
+            </View>
+          )}
+        </View>
         <Text style={styles.status}>{user.statusText}</Text>
 
         <View style={styles.levelRow}>
@@ -79,8 +90,16 @@ export function ProfileHeader({ user, isOwnProfile, isFollowing, onToggleFollow,
 
         <View style={styles.statsRow}>
           <StatItem value={user.reputation} label="Reputación" />
-          <StatItem value={user.following} label="Siguiendo" />
-          <StatItem value={user.followers} label="Seguidores" />
+          <StatItem
+            value={user.following}
+            label="Siguiendo"
+            onPress={statsUserId ? () => router.push(`/following?userId=${statsUserId}` as never) : undefined}
+          />
+          <StatItem
+            value={user.followers}
+            label="Seguidores"
+            onPress={statsUserId ? () => router.push(`/followers?userId=${statsUserId}` as never) : undefined}
+          />
           <StatItem value={user.visitors} label="Visitantes" />
         </View>
 
@@ -107,7 +126,10 @@ const styles = StyleSheet.create({
   avatarRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
   actionsRow: { flexDirection: 'row', gap: Spacing.xs },
   followButton: { minWidth: 120 },
-  name: { ...Typography.h2, color: Colors.textPrimary, marginTop: Spacing.sm },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, marginTop: Spacing.sm },
+  name: { ...Typography.h2, color: Colors.textPrimary },
+  friendBadge: { backgroundColor: Colors.surfaceSoft, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3 },
+  friendBadgeLabel: { ...Typography.caption, color: Colors.cyan, fontWeight: '600' },
   status: { ...Typography.caption, color: Colors.textSecondary, marginTop: 2 },
   levelRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginTop: Spacing.sm },
   levelText: { ...Typography.label, color: Colors.yellow },

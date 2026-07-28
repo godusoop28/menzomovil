@@ -32,6 +32,7 @@ export function ChatBubble({ message, author, isOwn, showAvatar = true }: Props)
           avatarUri={author?.avatarUri}
           gradient={author?.avatarGradient ?? 'fire'}
           size={30}
+          level={author?.level}
         />
       ) : (
         <View style={styles.avatarSpacer} />

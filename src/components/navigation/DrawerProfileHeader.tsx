@@ -37,6 +37,7 @@ export function DrawerProfileHeader({ profile, onPressProfile, onPressSearch }: 
               size={72}
               showOnline
               online={profile.isOnline}
+              level={profile.level}
             />
             <Text style={styles.name}>{profile.displayName}</Text>
             <Text style={styles.status}>{profile.statusText}</Text>

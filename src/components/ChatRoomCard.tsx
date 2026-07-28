@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { UserAvatar } from './UserAvatar';
 import { useAppState } from '@/hooks/useAppState';
@@ -11,12 +12,27 @@ import { Colors, Gradients, Radius, Spacing, Typography } from '@/theme';
 import type { ChatRoom } from '@/types';
 import { relativeTime } from '@/utils/time';
 
-export function ChatRoomCard({ room, compact }: { room: ChatRoom; compact?: boolean }) {
+type Props = {
+  room: ChatRoom;
+  compact?: boolean;
+  /** Si se pasa, las salas públicas sin unirse muestran un botón "Unirse" en vez de la estrella. */
+  onJoin?: (roomId: string) => void;
+  joining?: boolean;
+};
+
+export function ChatRoomCard({ room, compact, onJoin, joining }: Props) {
   const { state, actions } = useAppState();
   const { selection } = useHaptics();
   const messages = messagesForRoom(state.social, room.id);
   const last = messages[messages.length - 1];
   const title = room.type === 'direct' ? room.peer?.displayName ?? room.name : room.name;
+  const isOnline = room.type === 'direct' ? !!room.peer?.isOnline : room.onlineCount > 0;
+  const lastMessagePreview = last
+    ? last.body || (last.imageUri ? '📷 Foto' : '')
+    : room.lastMessage
+      ? room.lastMessage.body || (room.lastMessage.hasImage ? '📷 Foto' : '')
+      : room.description;
+  const lastMessageTime = last?.createdAt ?? room.lastMessage?.createdAt;
 
   return (
     <Pressable
@@ -33,6 +49,8 @@ export function ChatRoomCard({ room, compact }: { room: ChatRoom; compact?: bool
           showOnline
           online={room.peer.isOnline}
         />
+      ) : room.coverUri ? (
+        <Image source={{ uri: room.coverUri }} style={styles.icon} contentFit="cover" />
       ) : (
         <LinearGradient
           colors={Gradients[room.gradient] as unknown as [string, string, ...string[]]}
@@ -48,13 +66,13 @@ export function ChatRoomCard({ room, compact }: { room: ChatRoom; compact?: bool
           <Text style={styles.name} numberOfLines={1}>
             {title}
           </Text>
-          {!!last && <Text style={styles.time}>{relativeTime(last.createdAt)}</Text>}
+          {!!lastMessageTime && <Text style={styles.time}>{relativeTime(lastMessageTime)}</Text>}
         </View>
         <Text style={styles.lastMessage} numberOfLines={1}>
-          {last ? last.body : room.description}
+          {lastMessagePreview}
         </Text>
         <View style={styles.metaRow}>
-          <View style={styles.onlineDot} />
+          <View style={[styles.onlineDot, !isOnline && styles.onlineDotOffline]} />
           <Text style={styles.meta}>
             {room.type === 'direct'
               ? room.peer?.isOnline
@@ -65,21 +83,37 @@ export function ChatRoomCard({ room, compact }: { room: ChatRoom; compact?: bool
         </View>
       </View>
 
-      <Pressable
-        hitSlop={8}
-        accessibilityRole="button"
-        accessibilityLabel={room.favorite ? 'Quitar de favoritos' : 'Marcar como favorito'}
-        onPress={(e) => {
-          e.stopPropagation();
-          selection();
-          actions.toggleFavoriteRoom(room.id);
-        }}>
-        <Ionicons
-          name={room.favorite ? 'star' : 'star-outline'}
-          size={20}
-          color={room.favorite ? Colors.yellow : Colors.textMuted}
-        />
-      </Pressable>
+      {onJoin && room.type === 'public' && !room.joined ? (
+        <Pressable
+          hitSlop={8}
+          disabled={joining}
+          accessibilityRole="button"
+          accessibilityLabel="Unirse a la sala"
+          style={styles.joinButton}
+          onPress={(e) => {
+            e.stopPropagation();
+            selection();
+            onJoin(room.id);
+          }}>
+          {joining ? <ActivityIndicator size="small" color={Colors.textPrimary} /> : <Text style={styles.joinButtonLabel}>Unirse</Text>}
+        </Pressable>
+      ) : (
+        <Pressable
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={room.favorite ? 'Quitar de favoritos' : 'Marcar como favorito'}
+          onPress={(e) => {
+            e.stopPropagation();
+            selection();
+            actions.toggleFavoriteRoom(room.id);
+          }}>
+          <Ionicons
+            name={room.favorite ? 'star' : 'star-outline'}
+            size={20}
+            color={room.favorite ? Colors.yellow : Colors.textMuted}
+          />
+        </Pressable>
+      )}
     </Pressable>
   );
 }
@@ -104,5 +138,14 @@ const styles = StyleSheet.create({
   lastMessage: { ...Typography.caption, color: Colors.textSecondary },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
   onlineDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.online },
+  onlineDotOffline: { backgroundColor: Colors.offline },
   meta: { ...Typography.caption, color: Colors.textMuted, fontSize: 11 },
+  joinButton: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: Colors.borderStrong,
+  },
+  joinButtonLabel: { ...Typography.caption, color: Colors.textPrimary, fontWeight: '600' },
 });

@@ -8,6 +8,7 @@ import type {
   Notification,
   Post,
   UserProfile,
+  WallComment,
   WallMessage,
 } from '@/types';
 
@@ -26,6 +27,7 @@ export type SocialState = {
   notifications: Notification[];
   events: CommunityEvent[];
   wallMessages: WallMessage[];
+  wallComments: WallComment[];
   following: string[];
   recentlyViewed: RecentlyViewedEntry[];
   recentSearches: string[];

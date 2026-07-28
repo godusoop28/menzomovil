@@ -31,6 +31,8 @@ yarn-error.*
 *.pem
 
 # local env files
+.env
+.env.local
 .env*.local
 
 # typescript
@@ -41,3 +43,13 @@ example
 # generated native folders
 /ios
 /android
+
+# build artifacts
+*.aab
+*.apk
+
+# credentials — never commit these
+google-services.json
+google-service-account.json
+*-service-account.json
+credentials.json
