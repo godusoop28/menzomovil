@@ -3,24 +3,29 @@ import { Gradients, type GradientId } from '@/theme';
 import type {
   AbstractVisualPreset,
   ChatRoom,
+  ChatRoomRole,
   Comment,
   CommunityEvent,
   DemoUser,
   Message,
   Notification,
   Post,
+  RoomBan,
+  RoomMember,
   UserProfile,
   WallComment,
   WallMessage,
 } from '@/types';
 
 import type {
+  BanDto,
   ChatRoomDto,
   CommentDto,
   EventDto,
   MessageDto,
   NotificationDto,
   PostDto,
+  RoomMemberDto,
   UserProfileDto,
   UserSummaryDto,
   WallCommentDto,
@@ -115,6 +120,19 @@ export function mapUserSummary(dto: UserSummaryDto, myRealId: string | null): De
   };
 }
 
+export function mapRoomMember(dto: RoomMemberDto, myRealId: string | null): RoomMember {
+  return { user: mapUserSummary(dto.user, myRealId), role: dto.role.toLowerCase() as ChatRoomRole, joinedAt: dto.joinedAt };
+}
+
+export function mapBan(dto: BanDto, myRealId: string | null): RoomBan {
+  return {
+    user: mapUserSummary(dto.user, myRealId),
+    reason: dto.reason,
+    createdAt: dto.createdAt,
+    bannedBy: dto.bannedBy ? mapUserSummary(dto.bannedBy, myRealId) : null,
+  };
+}
+
 export function mapPost(dto: PostDto, myRealId: string | null): Post {
   return {
     id: dto.id,
@@ -190,6 +208,8 @@ export function mapChatRoom(dto: ChatRoomDto, myRealId: string | null = null): C
     onlineCount: dto.onlineCount,
     favorite: dto.favorite,
     joined: dto.joined,
+    role: dto.role ? (dto.role.toLowerCase() as ChatRoomRole) : null,
+    live: dto.live,
     createdAt: dto.createdAt,
     peer: dto.peer
       ? {

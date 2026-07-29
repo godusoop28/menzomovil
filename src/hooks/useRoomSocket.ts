@@ -3,11 +3,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { useAppState } from '@/hooks/useAppState';
 import { API_BASE_URL, getCachedSession } from '@/services/api';
+import type { RoomModerationEvent } from '@/services/api/types';
 
 const TYPING_EXPIRY_MS = 3000;
 const TYPING_PUBLISH_THROTTLE_MS = 2000;
 
 export type TypingUser = { userId: string; displayName: string };
+export type RemovalReason = 'kicked' | 'banned';
 
 function wsUrl(): string {
   return API_BASE_URL.replace(/^http/, 'ws') + '/ws';
@@ -21,6 +23,7 @@ function wsUrl(): string {
 export function useRoomSocket(roomId: string | undefined) {
   const { actions } = useAppState();
   const [typingUsers, setTypingUsers] = useState<TypingUser[]>([]);
+  const [removalReason, setRemovalReason] = useState<RemovalReason | null>(null);
   const clientRef = useRef<Client | null>(null);
   const typingTimeoutsRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const lastTypingPublishRef = useRef(0);
@@ -64,6 +67,12 @@ export function useRoomSocket(roomId: string | undefined) {
             }, TYPING_EXPIRY_MS)
           );
         });
+        client.subscribe(`/topic/rooms/${roomId}/moderation`, (frame) => {
+          const event = JSON.parse(frame.body) as RoomModerationEvent;
+          if (event.targetUserId !== session.userId) return;
+          if (event.type === 'KICKED') setRemovalReason('kicked');
+          if (event.type === 'BANNED') setRemovalReason('banned');
+        });
       },
     });
     client.activate();
@@ -75,6 +84,7 @@ export function useRoomSocket(roomId: string | undefined) {
       for (const timeout of typingTimeouts.values()) clearTimeout(timeout);
       typingTimeouts.clear();
       setTypingUsers([]);
+      setRemovalReason(null);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- actions is stable app-wide; re-running this on identity churn would tear down/reconnect the socket for no reason
   }, [roomId]);
@@ -89,5 +99,5 @@ export function useRoomSocket(roomId: string | undefined) {
     client.publish({ destination: `/app/rooms/${roomId}/typing`, body: JSON.stringify({ typing: true }) });
   }, [roomId]);
 
-  return { typingUsers, publishTyping };
+  return { typingUsers, publishTyping, removalReason };
 }

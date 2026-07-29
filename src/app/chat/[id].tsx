@@ -3,7 +3,19 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, KeyboardAvoidingView, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  ActivityIndicator,
+  FlatList,
+  KeyboardAvoidingView,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+  Pressable,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { Image } from 'expo-image';
 
 import { ChatBubble } from '@/components/ChatBubble';
@@ -25,6 +37,8 @@ import { findRoom, findUser, messagesForRoom } from '@/store/selectors';
 import { Colors, Radius, Spacing, Typography, useAccent } from '@/theme';
 import type { Message } from '@/types';
 
+const NEAR_BOTTOM_THRESHOLD_PX = 120;
+
 export default function ChatDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { state, actions } = useAppState();
@@ -39,19 +53,61 @@ export default function ChatDetailScreen() {
   const [busyCover, setBusyCover] = useState(false);
   const [busyBackground, setBusyBackground] = useState(false);
   const [sending, setSending] = useState(false);
+  const isNearBottomRef = useRef(true);
+  const prevMessageCountRef = useRef(0);
+  const [showNewMessagesPill, setShowNewMessagesPill] = useState(false);
 
   const room = findRoom(state.social, id);
   const isDirect = room?.type === 'direct';
 
   const messages = useMemo(() => messagesForRoom(state.social, id), [state.social, id]);
   const [refreshing, setRefreshing] = useState(false);
-  const { typingUsers, publishTyping } = useRoomSocket(id);
+  const { typingUsers, publishTyping, removalReason } = useRoomSocket(id);
 
   useEffect(() => {
     if (!room || !id) return;
     actions.loadRoomMessages(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, !!room]);
+
+  useEffect(() => {
+    if (!removalReason) return;
+    showToast(removalReason === 'banned' ? 'Fuiste baneado de esta sala.' : 'Fuiste expulsado de esta sala.');
+    router.back();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [removalReason]);
+
+  function scrollToBottom(animated: boolean) {
+    listRef.current?.scrollToEnd({ animated });
+    isNearBottomRef.current = true;
+    setShowNewMessagesPill(false);
+  }
+
+  function handleScroll(event: NativeSyntheticEvent<NativeScrollEvent>) {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const distanceFromBottom = contentSize.height - contentOffset.y - layoutMeasurement.height;
+    isNearBottomRef.current = distanceFromBottom < NEAR_BOTTOM_THRESHOLD_PX;
+    if (isNearBottomRef.current) setShowNewMessagesPill(false);
+  }
+
+  // Mensaje propio: siempre baja. Mensaje ajeno: solo baja si ya estábamos cerca del fondo; si no,
+  // se muestra el aviso "Nuevos mensajes" en vez de arrancar al usuario de lo que estaba leyendo.
+  // Este efecto (no onContentSizeChange, que también dispara con el footer de "escribiendo…")
+  // es lo único que decide un scroll forzado por mensaje nuevo.
+  useEffect(() => {
+    const prevCount = prevMessageCountRef.current;
+    const newCount = messages.length;
+    if (newCount > prevCount) {
+      const lastMessage = messages[newCount - 1];
+      if (lastMessage?.authorId === LOCAL_USER_ID || isNearBottomRef.current) {
+        scrollToBottom(newCount - prevCount === 1);
+      } else {
+        setShowNewMessagesPill(true);
+      }
+    }
+    prevMessageCountRef.current = newCount;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages.length]);
 
   const onRefresh = useCallback(async () => {
     if (!id) return;
@@ -159,7 +215,7 @@ export default function ChatDetailScreen() {
       setPendingImage(imageToSend);
       return;
     }
-    requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
+    requestAnimationFrame(() => scrollToBottom(true));
   }
 
   if (!room) {
@@ -191,7 +247,11 @@ export default function ChatDetailScreen() {
           <ChatBubble message={item} author={findUser(state.social, item.authorId)} isOwn={item.authorId === LOCAL_USER_ID} />
         )}
         ListFooterComponent={<TypingBubble typingUsers={typingUsers} />}
-        onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
+        onScroll={handleScroll}
+        scrollEventThrottle={100}
+        onContentSizeChange={() => {
+          if (isNearBottomRef.current) listRef.current?.scrollToEnd({ animated: false });
+        }}
       />
     );
 
@@ -212,6 +272,15 @@ export default function ChatDetailScreen() {
           )}
         </View>
         <View style={styles.headerActions}>
+          {!isDirect && (
+            <Pressable
+              onPress={() => router.push({ pathname: '/room-members', params: { roomId: id } })}
+              accessibilityRole="button"
+              accessibilityLabel="Ver miembros"
+              style={styles.headerIconButton}>
+              <Ionicons name="people-outline" size={16} color="#FFFFFF" />
+            </Pressable>
+          )}
           <Pressable
             onPress={pickRoomCover}
             disabled={busyCover}
@@ -283,13 +352,27 @@ export default function ChatDetailScreen() {
       )}
 
       <KeyboardAvoidingView behavior={behavior} style={styles.flex} keyboardVerticalOffset={90}>
-        {room.backgroundUri ? (
-          <MenzoImageBackground source={{ uri: room.backgroundUri }} style={styles.flex}>
-            {messagesList}
-          </MenzoImageBackground>
-        ) : (
-          messagesList
-        )}
+        <View style={styles.messagesArea}>
+          {room.backgroundUri ? (
+            <MenzoImageBackground source={{ uri: room.backgroundUri }} style={styles.flex}>
+              {messagesList}
+            </MenzoImageBackground>
+          ) : (
+            messagesList
+          )}
+
+          {showNewMessagesPill && (
+            <View style={styles.newMessagesPillWrap} pointerEvents="box-none">
+              <Pressable
+                onPress={() => scrollToBottom(true)}
+                accessibilityRole="button"
+                accessibilityLabel="Ir a los mensajes nuevos"
+                style={[styles.newMessagesPill, { backgroundColor: accent.color }]}>
+                <Text style={styles.newMessagesPillLabel}>Nuevos mensajes ↓</Text>
+              </Pressable>
+            </View>
+          )}
+        </View>
 
         {!!pendingImage && (
           <View style={styles.previewRow}>
@@ -401,6 +484,25 @@ const styles = StyleSheet.create({
   },
   muteButtonActive: { backgroundColor: 'rgba(251,113,133,0.15)' },
   list: { padding: Spacing.lg, gap: Spacing.sm },
+  messagesArea: { flex: 1, position: 'relative' },
+  newMessagesPillWrap: {
+    position: 'absolute',
+    bottom: Spacing.sm,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+  },
+  newMessagesPill: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 6,
+    borderRadius: Radius.pill,
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
+  },
+  newMessagesPillLabel: { ...Typography.caption, fontWeight: '700', color: Colors.textOnAccent },
   previewRow: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -3,6 +3,7 @@ import type {
   AuraDto,
   AuthResponseDto,
   BadgeDto,
+  BanDto,
   ChatRoomDto,
   CommentDto,
   CommunityConfigDto,
@@ -13,6 +14,7 @@ import type {
   InterestDto,
   LoginRequest,
   MessageDto,
+  ModerationActionRequest,
   NotificationDto,
   OnboardingRequest,
   PageResponse,
@@ -20,6 +22,7 @@ import type {
   RecentlyViewedDto,
   RefreshRequest,
   RegisterRequest,
+  RoomMemberDto,
   SendMessageRequest,
   SettingsDto,
   UpdateProfileRequest,
@@ -124,6 +127,20 @@ export const chatApi = {
     apiFetch<PageResponse<MessageDto>>(`/api/chat/rooms/${id}/messages${qs({ page, size })}`),
   sendMessage: (id: string, body: SendMessageRequest) =>
     apiFetch<MessageDto>(`/api/chat/rooms/${id}/messages`, { method: 'POST', body }),
+  members: (id: string) => apiFetch<RoomMemberDto[]>(`/api/chat/rooms/${id}/members`),
+  promote: (id: string, userId: string) =>
+    apiFetch<void>(`/api/chat/rooms/${id}/members/${userId}/promote`, { method: 'POST' }),
+  demote: (id: string, userId: string) =>
+    apiFetch<void>(`/api/chat/rooms/${id}/members/${userId}/demote`, { method: 'POST' }),
+  kick: (id: string, userId: string) =>
+    apiFetch<void>(`/api/chat/rooms/${id}/members/${userId}`, { method: 'DELETE' }),
+  ban: (id: string, userId: string, body?: ModerationActionRequest) =>
+    apiFetch<void>(`/api/chat/rooms/${id}/members/${userId}/ban`, { method: 'POST', body }),
+  unban: (id: string, userId: string) =>
+    apiFetch<void>(`/api/chat/rooms/${id}/bans/${userId}`, { method: 'DELETE' }),
+  bans: (id: string) => apiFetch<BanDto[]>(`/api/chat/rooms/${id}/bans`),
+  invite: (id: string, userId: string) =>
+    apiFetch<void>(`/api/chat/rooms/${id}/members/${userId}/invite`, { method: 'POST' }),
 };
 
 export const voiceApi = {

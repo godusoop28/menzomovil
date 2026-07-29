@@ -13,6 +13,8 @@ export const demoRooms: ChatRoom[] = [
     onlineCount: 18,
     favorite: true,
     joined: true,
+    role: 'member',
+    live: false,
     createdAt: new Date().toISOString(),
   },
   {
@@ -27,6 +29,8 @@ export const demoRooms: ChatRoom[] = [
     onlineCount: 24,
     favorite: true,
     joined: true,
+    role: 'member',
+    live: false,
     createdAt: new Date().toISOString(),
   },
   {
@@ -41,6 +45,8 @@ export const demoRooms: ChatRoom[] = [
     onlineCount: 9,
     favorite: false,
     joined: true,
+    role: 'member',
+    live: false,
     createdAt: new Date().toISOString(),
   },
   {
@@ -55,6 +61,8 @@ export const demoRooms: ChatRoom[] = [
     onlineCount: 12,
     favorite: false,
     joined: true,
+    role: 'member',
+    live: false,
     createdAt: new Date().toISOString(),
   },
   {
@@ -69,6 +77,8 @@ export const demoRooms: ChatRoom[] = [
     onlineCount: 7,
     favorite: false,
     joined: true,
+    role: 'member',
+    live: false,
     createdAt: new Date().toISOString(),
   },
 ];

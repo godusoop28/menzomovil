@@ -51,17 +51,24 @@ export function ChatRoomCard({ room, compact, onJoin, joining }: Props) {
         />
       ) : (
         <View style={styles.publicIconWrap}>
-          {room.coverUri ? (
-            <Image source={{ uri: room.coverUri }} style={styles.icon} contentFit="cover" />
-          ) : (
-            <LinearGradient
-              colors={Gradients[room.gradient] as unknown as [string, string, ...string[]]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.icon}>
-              <Ionicons name={room.icon as never} size={22} color="#FFFFFF" />
-            </LinearGradient>
-          )}
+          <View>
+            {room.coverUri ? (
+              <Image source={{ uri: room.coverUri }} style={styles.icon} contentFit="cover" />
+            ) : (
+              <LinearGradient
+                colors={Gradients[room.gradient] as unknown as [string, string, ...string[]]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.icon}>
+                <Ionicons name={room.icon as never} size={22} color="#FFFFFF" />
+              </LinearGradient>
+            )}
+            {room.live && (
+              <View style={styles.liveBadge}>
+                <Text style={styles.liveBadgeLabel}>Live</Text>
+              </View>
+            )}
+          </View>
           <Text style={styles.publicIconCaption} numberOfLines={1}>
             Sala pública
           </Text>
@@ -139,6 +146,26 @@ const styles = StyleSheet.create({
   compact: { width: 220 },
   publicIconWrap: { alignItems: 'center', gap: 3 },
   icon: { width: 48, height: 48, borderRadius: Radius.md, alignItems: 'center', justifyContent: 'center' },
+  liveBadge: {
+    position: 'absolute',
+    bottom: -6,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+  },
+  liveBadgeLabel: {
+    ...Typography.caption,
+    fontSize: 8,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+    color: '#FFFFFF',
+    backgroundColor: Colors.coral,
+    borderRadius: 999,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    overflow: 'hidden',
+  },
   publicIconCaption: { ...Typography.caption, fontSize: 8, textTransform: 'uppercase', letterSpacing: 0.4, color: Colors.textMuted },
   info: { flex: 1, gap: 2 },
   titleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
