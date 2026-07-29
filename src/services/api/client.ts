@@ -67,7 +67,14 @@ export function onSessionExpired(listener: SessionExpiredListener): () => void {
   };
 }
 
-const NETWORK_RETRY_DELAYS_MS = [1000, 3000];
+// El backend gratuito de Render puede tardar hasta uno o dos minutos en levantar cuando
+// estaba dormido, y durante ese arranque el fetch no queda "colgado" (lo que cubriría
+// HARD_TIMEOUT_MS) sino que la conexión es rechazada de entrada — eso lanza un error de red
+// inmediato. Antes solo se reintentaba ~4s en total (1s + 3s), muy por debajo de lo que
+// tarda un cold start real, así que un login legítimo terminaba mostrando "revisa tu
+// conexión" incluso con wifi perfecto. Se reintenta cada 3s hasta cubrir ese margen.
+const NETWORK_RETRY_DELAY_MS = 3000;
+const NETWORK_RETRY_BUDGET_MS = 75_000;
 
 function isNetworkError(e: unknown): boolean {
   return e instanceof Error && e.name !== 'AbortError';
@@ -133,19 +140,23 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
 
   async function attemptWithRetries(): Promise<Response> {
     const endSlowWatch = beginSlowWatch();
+    const deadline = Date.now() + NETWORK_RETRY_BUDGET_MS;
     try {
-      return await attempt();
-    } catch (e) {
-      for (const delay of NETWORK_RETRY_DELAYS_MS) {
-        if (!isNetworkError(e)) break;
-        await sleep(delay);
+      let lastError: unknown;
+      try {
+        return await attempt();
+      } catch (e) {
+        lastError = e;
+      }
+      while (isNetworkError(lastError) && Date.now() < deadline) {
+        await sleep(NETWORK_RETRY_DELAY_MS);
         try {
           return await attempt();
         } catch (retryError) {
-          e = retryError;
+          lastError = retryError;
         }
       }
-      if (e instanceof Error && e.name === 'AbortError') {
+      if (lastError instanceof Error && lastError.name === 'AbortError') {
         throw new ApiError(
           0,
           'Menzo tardó demasiado en responder. El servidor puede estar iniciando — inténtalo de nuevo en un minuto.'
