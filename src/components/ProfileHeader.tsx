@@ -28,7 +28,11 @@ type Props = {
 export function ProfileHeader({ user, isOwnProfile, isFollowing, onToggleFollow, onMessage, hideActions, statsUserId }: Props) {
   const aura = auraById(user.aura);
   const xpToNext = 500 - (user.xp % 500);
-  const isFriend = !isOwnProfile && !!isFollowing && !!user.followsMe;
+  const followsMe = !isOwnProfile && !!user.followsMe;
+  const isFriend = !isOwnProfile && !!isFollowing && followsMe;
+  // "Siguiendo" y "Amigos" nunca se muestran a la vez — una vez que hay amistad, el botón pasa a
+  // describir la acción real (dejar de seguir) en vez de repetir el badge del nombre.
+  const followButtonLabel = isFriend ? 'Dejar de seguir' : isFollowing ? 'Siguiendo' : followsMe ? 'Seguir también' : 'Seguir';
 
   return (
     <View style={styles.wrap}>
@@ -59,7 +63,7 @@ export function ProfileHeader({ user, isOwnProfile, isFollowing, onToggleFollow,
             <View style={styles.actionsRow}>
               <View style={styles.followButton}>
                 <GradientButton
-                  label={isFollowing ? 'Siguiendo' : 'Seguir'}
+                  label={followButtonLabel}
                   onPress={onToggleFollow ?? (() => {})}
                   gradient={isFollowing ? 'community' : 'fire'}
                   size="md"
@@ -73,10 +77,17 @@ export function ProfileHeader({ user, isOwnProfile, isFollowing, onToggleFollow,
 
         <View style={styles.nameRow}>
           <Text style={styles.name}>{user.displayName}</Text>
-          {isFriend && (
+          {isFriend ? (
             <View style={styles.friendBadge}>
               <Text style={styles.friendBadgeLabel}>Amigos</Text>
             </View>
+          ) : (
+            !isFollowing &&
+            followsMe && (
+              <View style={styles.followsMeBadge}>
+                <Text style={styles.followsMeBadgeLabel}>Te sigue</Text>
+              </View>
+            )
           )}
         </View>
         <Text style={styles.status}>{user.statusText}</Text>
@@ -133,6 +144,8 @@ const styles = StyleSheet.create({
   name: { ...Typography.h2, color: Colors.textPrimary },
   friendBadge: { backgroundColor: Colors.surfaceSoft, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3 },
   friendBadgeLabel: { ...Typography.caption, color: Colors.cyan, fontWeight: '600' },
+  followsMeBadge: { backgroundColor: Colors.surfaceSoft, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3 },
+  followsMeBadgeLabel: { ...Typography.caption, color: Colors.textMuted, fontWeight: '500' },
   status: { ...Typography.caption, color: Colors.textSecondary, marginTop: 2 },
   levelRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginTop: Spacing.sm },
   levelPill: {

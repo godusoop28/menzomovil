@@ -82,6 +82,8 @@ export function mapUserProfile(dto: UserProfileDto, myRealId: string | null): Us
     isLocalUser: !!myRealId && dto.id === myRealId,
     followedByMe: dto.followedByMe,
     followsMe: dto.followsMe,
+    areFriends: dto.areFriends,
+    relationshipStatus: dto.relationshipStatus,
   };
 }
 

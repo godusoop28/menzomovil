@@ -4,6 +4,7 @@ import { Pressable, Share, StyleSheet, Text, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
 
 import { AbstractArtwork } from './AbstractArtwork';
+import { PollCard } from './PollCard';
 import { UserAvatar } from './UserAvatar';
 import { useAnimatedEntrance } from '@/hooks/useAnimatedEntrance';
 import { useAppState } from '@/hooks/useAppState';
@@ -81,6 +82,8 @@ export function PostCard({ post }: { post: Post }) {
           style={styles.visual}
         />
       )}
+
+      {post.type === 'poll' && <PollCard post={post} />}
 
       {post.tags.length > 0 && (
         <View style={styles.tagsRow}>

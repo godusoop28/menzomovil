@@ -63,7 +63,6 @@ export type Action =
   | { type: 'TOGGLE_FOLLOW'; payload: { userId: string } }
   | { type: 'SEND_MESSAGE'; payload: Message }
   | { type: 'TOGGLE_FAVORITE_ROOM'; payload: { roomId: string } }
-  | { type: 'VOTE_POLL'; payload: { postId: string; optionId: string } }
   | { type: 'ATTEND_EVENT'; payload: { eventId: string } }
   | { type: 'MARK_NOTIFICATION_READ'; payload: { id: string } }
   | { type: 'MARK_ALL_NOTIFICATIONS_READ' }
@@ -311,30 +310,6 @@ export function appReducer(state: AppState, action: Action): AppState {
           rooms: state.social.rooms.map((r) =>
             r.id === roomId ? { ...r, favorite: !r.favorite } : r
           ),
-        },
-      };
-    }
-
-    case 'VOTE_POLL': {
-      const { postId, optionId } = action.payload;
-      return {
-        ...state,
-        social: {
-          ...state.social,
-          posts: state.social.posts.map((post) => {
-            if (post.id !== postId || !post.pollOptions) return post;
-            const alreadyVoted = post.pollOptions.find((o) => o.id === optionId)?.votes.includes(LOCAL_USER_ID);
-            return {
-              ...post,
-              pollOptions: post.pollOptions.map((option) => {
-                const withoutMe = option.votes.filter((id) => id !== LOCAL_USER_ID);
-                if (option.id === optionId && !alreadyVoted) {
-                  return { ...option, votes: [...withoutMe, LOCAL_USER_ID] };
-                }
-                return { ...option, votes: withoutMe };
-              }),
-            };
-          }),
         },
       };
     }

@@ -59,7 +59,11 @@ export type UserProfile = {
   isLocalUser?: boolean;
   followedByMe?: boolean;
   followsMe?: boolean;
+  areFriends?: boolean;
+  relationshipStatus?: RelationshipStatus;
 };
+
+export type RelationshipStatus = 'SELF' | 'NONE' | 'FOLLOWING' | 'FOLLOWS_YOU' | 'FRIENDS';
 
 export type DemoUser = UserProfile & {
   activityStatus: string;

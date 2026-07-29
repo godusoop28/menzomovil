@@ -7,6 +7,7 @@ import { AbstractArtwork } from '@/components/AbstractArtwork';
 import { EmptyState } from '@/components/EmptyState';
 import { GradientButton } from '@/components/GradientButton';
 import { IconButton } from '@/components/IconButton';
+import { PollCard } from '@/components/PollCard';
 import { ScreenContainer } from '@/components/ScreenContainer';
 import { UserAvatar } from '@/components/UserAvatar';
 import { useAppState } from '@/hooks/useAppState';
@@ -14,14 +15,13 @@ import { useHaptics } from '@/hooks/useHaptics';
 import { useKeyboardBehavior } from '@/hooks/useKeyboardOffset';
 import { LOCAL_USER_ID } from '@/store/localUser';
 import { commentsForPost, findEvent, findPost, findUser } from '@/store/selectors';
-import { Colors, Radius, Spacing, Typography, useAccent } from '@/theme';
+import { Colors, Radius, Spacing, Typography } from '@/theme';
 import { relativeTime } from '@/utils/time';
 
 export default function PostDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { state, actions } = useAppState();
   const { light, selection, success } = useHaptics();
-  const accent = useAccent();
   const behavior = useKeyboardBehavior();
   const [commentDraft, setCommentDraft] = useState('');
 
@@ -55,7 +55,6 @@ export default function PostDetailScreen() {
   const saved = post.bookmarkedBy.includes(LOCAL_USER_ID);
   const comments = commentsForPost(state.social, post.id);
   const event = post.eventId ? findEvent(state.social, post.eventId) : undefined;
-  const totalVotes = post.pollOptions?.reduce((sum, o) => sum + o.votes.length, 0) ?? 0;
 
   function submitComment() {
     const trimmed = commentDraft.trim();
@@ -97,31 +96,7 @@ export default function PostDetailScreen() {
             <AbstractArtwork preset={post.abstractVisual.preset} caption={post.abstractVisual.caption} style={styles.visual} />
           )}
 
-          {post.pollOptions && (
-            <View style={styles.pollWrap}>
-              {post.pollOptions.map((option) => {
-                const votes = option.votes.length;
-                const pct = totalVotes === 0 ? 0 : Math.round((votes / totalVotes) * 100);
-                const votedForThis = option.votes.includes(LOCAL_USER_ID);
-                return (
-                  <Pressable
-                    key={option.id}
-                    onPress={() => {
-                      selection();
-                      actions.votePoll(post.id, option.id);
-                    }}
-                    style={[styles.pollOption, votedForThis && { borderColor: accent.color }]}>
-                    <View style={[styles.pollFill, { width: `${pct}%` }]} />
-                    <View style={styles.pollOptionContent}>
-                      <Text style={styles.pollLabel}>{option.label}</Text>
-                      <Text style={styles.pollPct}>{pct}%</Text>
-                    </View>
-                  </Pressable>
-                );
-              })}
-              <Text style={styles.pollTotal}>{totalVotes} votos</Text>
-            </View>
-          )}
+          {post.type === 'poll' && <PollCard post={post} />}
 
           {event && (
             <View style={styles.eventCard}>
@@ -220,20 +195,6 @@ const styles = StyleSheet.create({
   title: { ...Typography.h2, color: Colors.textPrimary },
   body: { ...Typography.body, color: Colors.textSecondary },
   visual: { height: 200 },
-  pollWrap: { gap: Spacing.sm },
-  pollOption: {
-    borderRadius: Radius.md,
-    borderWidth: 1,
-    borderColor: Colors.borderSoft,
-    backgroundColor: Colors.surfaceSecondary,
-    overflow: 'hidden',
-    padding: Spacing.md,
-  },
-  pollFill: { position: 'absolute', left: 0, top: 0, bottom: 0, backgroundColor: 'rgba(255,122,26,0.18)' },
-  pollOptionContent: { flexDirection: 'row', justifyContent: 'space-between' },
-  pollLabel: { ...Typography.bodyMedium, color: Colors.textPrimary },
-  pollPct: { ...Typography.bodyMedium, color: Colors.textSecondary },
-  pollTotal: { ...Typography.caption, color: Colors.textMuted },
   eventCard: {
     backgroundColor: Colors.surfaceSecondary,
     borderRadius: Radius.lg,

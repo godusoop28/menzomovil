@@ -25,9 +25,16 @@ export function MemberCard({ user, variant = 'row' }: Props) {
         level={user.level}
       />
       <View style={isColumn ? styles.columnText : styles.rowText}>
-        <Text style={styles.name} numberOfLines={1}>
-          {user.displayName}
-        </Text>
+        <View style={isColumn ? styles.nameRowColumn : styles.nameRowRow}>
+          <Text style={styles.name} numberOfLines={1}>
+            {user.displayName}
+          </Text>
+          {!isColumn && user.areFriends && (
+            <View style={styles.friendBadge}>
+              <Text style={styles.friendBadgeLabel}>Amigo</Text>
+            </View>
+          )}
+        </View>
         <Text style={styles.status} numberOfLines={1}>
           {user.isOnline ? user.activityStatus : 'Desconectado'}
         </Text>
@@ -51,6 +58,10 @@ const styles = StyleSheet.create({
   column: { width: 88, gap: 6 },
   rowText: { flex: 1, gap: 2 },
   columnText: { alignItems: 'center', gap: 2 },
+  nameRowRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  nameRowColumn: { alignItems: 'center' },
   name: { ...Typography.bodyMedium, color: Colors.textPrimary, textAlign: 'center' },
   status: { ...Typography.caption, color: Colors.textMuted, textAlign: 'center' },
+  friendBadge: { backgroundColor: Colors.surfaceSoft, borderRadius: 999, paddingHorizontal: 6, paddingVertical: 2 },
+  friendBadgeLabel: { ...Typography.caption, fontSize: 10, color: Colors.cyan, fontWeight: '600' },
 });

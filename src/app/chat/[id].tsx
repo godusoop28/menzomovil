@@ -31,7 +31,7 @@ import { useHaptics } from '@/hooks/useHaptics';
 import { useKeyboardBehavior } from '@/hooks/useKeyboardOffset';
 import { useRoomSocket } from '@/hooks/useRoomSocket';
 import { useToast } from '@/hooks/useToast';
-import { chatApi, getMyRealId } from '@/services/api';
+import { chatApi, getMyRealId, mapUserProfile, usersApi } from '@/services/api';
 import type { RoomRole } from '@/services/api/types';
 import { LOCAL_USER_ID } from '@/store/localUser';
 import { findRoom, findUser, messagesForRoom } from '@/store/selectors';
@@ -75,6 +75,7 @@ export default function ChatDetailScreen() {
   const room = findRoom(state.social, id);
   const isDirect = room?.type === 'direct';
   const [memberRoles, setMemberRoles] = useState<Map<string, RoomRole>>(new Map());
+  const [peerAreFriends, setPeerAreFriends] = useState(false);
 
   const messages = useMemo(() => messagesForRoom(state.social, id), [state.social, id]);
 
@@ -92,6 +93,18 @@ export default function ChatDetailScreen() {
       })
       .catch((error) => console.warn('[menzo/mobile] loadRoomMembers failed', error));
   }, [id, room?.type]);
+
+  // room.peer trae los datos livianos del DTO de la sala (sin info de relación) — para saber si es
+  // amigo hay que pedir su perfil completo aparte, solo cuando el chat es directo. La UI que lo
+  // muestra ya filtra por isDirect, así que no hace falta resetear al cambiar de sala.
+  const directPeerId = isDirect ? room?.peer?.id : undefined;
+  useEffect(() => {
+    if (!directPeerId) return;
+    usersApi
+      .getById(directPeerId)
+      .then((dto) => setPeerAreFriends(mapUserProfile(dto, getMyRealId()).areFriends ?? false))
+      .catch((error) => console.warn('[menzo/mobile] loadPeerProfile failed', error));
+  }, [directPeerId]);
   const [refreshing, setRefreshing] = useState(false);
   const { typingUsers, publishTyping, removalReason } = useRoomSocket(id);
 
@@ -319,9 +332,16 @@ export default function ChatDetailScreen() {
         {!!room.coverUri && <View style={[StyleSheet.absoluteFill, styles.headerOverlay]} />}
         <IconButton name="chevron-back" label="Volver" onPress={() => router.back()} />
         <View style={styles.headerText}>
-          <Text style={styles.headerTitle} numberOfLines={1}>
-            {headerTitle}
-          </Text>
+          <View style={styles.headerTitleRow}>
+            <Text style={styles.headerTitle} numberOfLines={1}>
+              {headerTitle}
+            </Text>
+            {isDirect && peerAreFriends && (
+              <View style={styles.friendBadge}>
+                <Text style={styles.friendBadgeLabel}>Amigos</Text>
+              </View>
+            )}
+          </View>
           {!!headerSubtitle && (
             <Text style={[styles.headerSubtitle, !headerOnline && styles.headerSubtitleOffline]}>{headerSubtitle}</Text>
           )}
@@ -504,7 +524,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.35)',
   },
   headerText: { flex: 1, alignItems: 'center' },
-  headerTitle: { ...Typography.h3, color: Colors.textPrimary },
+  headerTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  headerTitle: { ...Typography.h3, color: Colors.textPrimary, flexShrink: 1 },
+  friendBadge: { backgroundColor: Colors.surfaceSoft, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 },
+  friendBadgeLabel: { ...Typography.caption, fontSize: 10, color: Colors.cyan, fontWeight: '600' },
   headerSubtitle: { ...Typography.caption, color: Colors.green },
   headerSubtitleOffline: { color: Colors.textMuted },
   voicePill: {

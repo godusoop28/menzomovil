@@ -56,7 +56,11 @@ export type UserProfileDto = {
   badges: string[];
   followedByMe: boolean;
   followsMe: boolean;
+  areFriends: boolean;
+  relationshipStatus: RelationshipStatus;
 };
+
+export type RelationshipStatus = 'SELF' | 'NONE' | 'FOLLOWING' | 'FOLLOWS_YOU' | 'FRIENDS';
 
 export type AuthResponseDto = {
   accessToken: string;
