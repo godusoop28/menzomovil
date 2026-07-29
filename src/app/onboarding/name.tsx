@@ -36,9 +36,9 @@ export default function OnboardingName() {
     <ScreenContainer backgroundImage={menzoAssets.backgrounds.onboarding} backgroundImageOverlay={0.66}>
       <KeyboardAvoidingView behavior={behavior} style={styles.flex}>
         <View style={styles.content}>
-          <Text style={styles.title}>¿Cómo quieres que te recuerden?</Text>
+          <Text style={styles.title}>¿Cómo quieres que te conozcan?</Text>
           <Text style={styles.subtitle}>
-            Puede ser tu antiguo apodo, tu nombre actual o una identidad completamente nueva.
+            Puede ser tu apodo de siempre, tu nombre actual o una identidad completamente nueva.
           </Text>
 
           <View style={styles.fieldWrap}>
@@ -65,7 +65,7 @@ export default function OnboardingName() {
               <UserAvatar name={trimmed} gradient="fire" size={64} />
               <View style={styles.previewText}>
                 <Text style={styles.previewName}>{trimmed}</Text>
-                <Text style={styles.previewStatus}>Acaba de regresar</Text>
+                <Text style={styles.previewStatus}>Nuevo en Menzo</Text>
                 <View style={styles.badgeRow}>
                   <BadgeChip badge={founderBadge} compact />
                 </View>

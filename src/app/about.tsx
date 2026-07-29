@@ -41,8 +41,8 @@ export default function AboutScreen() {
         </Pressable>
 
         <Text style={styles.paragraph}>
-          Menzo nació de la idea de volver a reunir a quienes alguna vez encontraron un hogar, una
-          amistad o una parte de sí mismos dentro de una comunidad en internet.
+          Menzo nació de la idea de conectar personas con intereses en común: comunidades, chats,
+          llamadas en vivo y blogs, todo en un mismo lugar.
         </Text>
 
         <View style={styles.metaBlock}>

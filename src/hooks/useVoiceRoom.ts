@@ -11,7 +11,10 @@ import {
 import { getMyRealId, mapUserSummary, voiceApi } from '@/services/api';
 import type { DemoUser } from '@/types';
 
-const SPEAKING_VOLUME_THRESHOLD = 20; // AudioVolumeInfo.volume va de 0 a 255.
+/** AudioVolumeInfo.volume va de 0 a 255 — se normaliza a 0-1 para que la UI no dependa de la escala del SDK nativo. */
+function normalizeVolume(volume: number): number {
+  return Math.max(0, Math.min(1, volume / 255));
+}
 
 async function ensureMicPermission(): Promise<boolean> {
   if (Platform.OS !== 'android') return true;
@@ -24,7 +27,7 @@ export function useVoiceRoom(roomId: string | undefined) {
   const [connecting, setConnecting] = useState(false);
   const [muted, setMuted] = useState(false);
   const [participants, setParticipants] = useState<DemoUser[]>([]);
-  const [speakingUserIds, setSpeakingUserIds] = useState<Set<string>>(new Set());
+  const [speakingLevels, setSpeakingLevels] = useState<Map<string, number>>(new Map());
   const [permissionDenied, setPermissionDenied] = useState(false);
   const engineRef = useRef<IRtcEngine | null>(null);
   const handlerRef = useRef<IRtcEngineEventHandler | null>(null);
@@ -64,7 +67,7 @@ export function useVoiceRoom(roomId: string | undefined) {
     handlerRef.current = null;
     accountsByUid.current.clear();
     setConnected(false);
-    setSpeakingUserIds(new Set());
+    setSpeakingLevels(new Map());
   }, []);
 
   const join = useCallback(async () => {
@@ -89,17 +92,17 @@ export function useVoiceRoom(roomId: string | undefined) {
           if (info.userAccount) accountsByUid.current.set(uid, info.userAccount);
         },
         onAudioVolumeIndication: (_connection, speakers) => {
-          const speaking = new Set<string>();
+          const levels = new Map<string, number>();
           for (const speaker of speakers) {
-            if ((speaker.volume ?? 0) <= SPEAKING_VOLUME_THRESHOLD) continue;
+            const level = normalizeVolume(speaker.volume ?? 0);
             if (speaker.uid === 0 || speaker.uid === undefined) {
-              speaking.add(uid);
+              levels.set(uid, level);
             } else {
               const account = accountsByUid.current.get(speaker.uid);
-              if (account) speaking.add(account);
+              if (account) levels.set(account, level);
             }
           }
-          setSpeakingUserIds(speaking);
+          setSpeakingLevels(levels);
         },
         onError: (err, msg) => console.warn('[menzo/voice] engine error', err, msg),
       };
@@ -152,5 +155,5 @@ export function useVoiceRoom(roomId: string | undefined) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId]);
 
-  return { connected, connecting, muted, participants, speakingUserIds, permissionDenied, join, leave, toggleMute };
+  return { connected, connecting, muted, participants, speakingLevels, permissionDenied, join, leave, toggleMute };
 }

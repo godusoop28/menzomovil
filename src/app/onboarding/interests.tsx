@@ -20,7 +20,7 @@ export default function OnboardingInterests() {
         <IconButton name="chevron-back" label="Volver" onPress={() => router.back()} />
       </View>
       <View style={styles.content}>
-        <Text style={styles.title}>¿Qué te sigue haciendo sentir en casa?</Text>
+        <Text style={styles.title}>¿Qué te interesa?</Text>
         <Text style={styles.subtitle}>Elige entre 1 y 5 intereses.</Text>
 
         <View style={styles.grid}>

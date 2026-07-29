@@ -1,25 +1,24 @@
 import type { CommunityConfig } from '@/types';
 
 export const communityConfig: CommunityConfig = {
-  name: 'Menzo Central',
-  subtitle: 'El Reencuentro',
-  description:
-    'Una comunidad para quienes aún recuerdan cómo se sentía pertenecer a un lugar en internet.',
-  motto: 'Un lugar para volver a encontrarnos.',
+  name: 'Menzo',
+  subtitle: 'Red social',
+  description: 'Una comunidad para conectar, compartir y descubrir gente con tus mismos intereses.',
+  motto: 'Conecta. Comparte. Crea.',
   memberCount: 2483,
   onlineCount: 96,
-  tags: ['Anime', 'Manga', 'Videojuegos', 'Arte', 'Nostalgia digital'],
+  tags: ['Anime', 'Manga', 'Videojuegos', 'Arte', 'Cultura pop'],
 };
 
 export const conceptPhrases = [
-  'El reencuentro ya comenzó.',
-  'Aquí todavía existen las comunidades.',
-  'Vuelve a encontrar a quienes hicieron especial aquella época.',
-  'No buscamos seguidores. Buscamos volver a conectar.',
-  'Las mejores historias siempre encuentran el camino de regreso.',
+  'Las comunidades siguen vivas.',
+  'Un lugar para las tuyas.',
+  'Encuentra a quienes comparten tus intereses.',
+  'No buscamos seguidores. Buscamos conexiones reales.',
+  'Las mejores historias encuentran su comunidad.',
 ];
 
 export const shareInviteMessage =
-  'Estoy probando Menzo, un lugar para volver a reunir a quienes hicieron especial nuestra época en las comunidades de internet.';
+  'Estoy probando Menzo, una red social para conectar con gente que comparte tus mismos intereses.';
 
 export const discordInviteUrl = 'https://discord.gg/33wdYHbZv';

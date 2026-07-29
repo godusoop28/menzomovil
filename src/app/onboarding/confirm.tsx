@@ -52,8 +52,8 @@ export default function OnboardingConfirm() {
   return (
     <ScreenContainer>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <Text style={styles.title}>Tu lugar sigue aquí.</Text>
-        <Text style={styles.subtitle}>Bienvenido de vuelta, {draft.displayName}.</Text>
+        <Text style={styles.title}>Tu perfil está listo.</Text>
+        <Text style={styles.subtitle}>Bienvenido a Menzo, {draft.displayName}.</Text>
 
         <LinearGradient
           colors={Gradients[aura.gradient] as unknown as [string, string, ...string[]]}
@@ -70,7 +70,7 @@ export default function OnboardingConfirm() {
               online
             />
             <Text style={styles.cardName}>{draft.displayName}</Text>
-            <Text style={styles.cardStatus}>Acaba de regresar · Aura {aura.name}</Text>
+            <Text style={styles.cardStatus}>Nuevo en Menzo · Aura {aura.name}</Text>
             <BadgeChip badge={newcomerBadge} />
           </View>
         </LinearGradient>

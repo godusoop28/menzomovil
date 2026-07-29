@@ -80,7 +80,7 @@ export default function OnboardingSplash() {
 
         <Animated.View style={textStyle}>
           <Text style={styles.wordmark}>MENZO</Text>
-          <Text style={styles.tagline}>Volver también es avanzar.</Text>
+          <Text style={styles.tagline}>Conecta. Comparte. Crea.</Text>
         </Animated.View>
       </View>
     </ScreenContainer>

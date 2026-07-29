@@ -112,7 +112,7 @@ export default function HomeScreen() {
               <>
                 <MenzoImageBackground source={menzoAssets.banners.featured} style={styles.featuredBanner} overlayOpacity={0.3}>
                   <View style={styles.featuredBannerContent}>
-                    <Text style={styles.featuredBannerLabel}>El reencuentro brilla más aquí</Text>
+                    <Text style={styles.featuredBannerLabel}>Lo mejor de la semana</Text>
                     <Text style={styles.featuredBannerTitle}>Destacados</Text>
                   </View>
                 </MenzoImageBackground>
@@ -131,7 +131,7 @@ export default function HomeScreen() {
                   ))}
                 </ScrollView>
 
-                <Text style={styles.sectionTitle}>Recuerdos que regresaron</Text>
+                <Text style={styles.sectionTitle}>También te puede interesar</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hScroll}>
                   {[...featured].reverse().map((post) => (
                     <FeaturedPostCard key={`memory-${post.id}`} post={post} />

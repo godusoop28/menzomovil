@@ -13,15 +13,15 @@ export default function OnboardingIntro() {
       <View style={styles.content}>
         <MenzoLogo size={64} />
         <View style={styles.textWrap}>
-          <Text style={styles.title}>Hay nombres que nunca se olvidan.</Text>
+          <Text style={styles.title}>Conecta con tu gente.</Text>
           <Text style={styles.subtitle}>
-            Elige cómo quieres que tus antiguos amigos vuelvan a encontrarte.
+            Elige cómo quieres que te encuentren en Menzo.
           </Text>
         </View>
       </View>
       <View style={styles.footer}>
         <GradientButton
-          label="Comenzar el reencuentro"
+          label="Crear mi cuenta"
           onPress={() => router.push('/onboarding/account')}
         />
         <Pressable onPress={() => router.push('/login')} accessibilityRole="button" style={styles.loginLink}>

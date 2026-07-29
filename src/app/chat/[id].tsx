@@ -6,16 +6,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, KeyboardAvoidingView, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Image } from 'expo-image';
 
-import { UserAvatar } from '@/components/UserAvatar';
 import { ChatBubble } from '@/components/ChatBubble';
+import { TypingBubble } from '@/components/TypingBubble';
 import { MenzoImageBackground } from '@/components/common/MenzoImageBackground';
 import { EmptyState } from '@/components/EmptyState';
 import { IconButton } from '@/components/IconButton';
 import { ScreenContainer } from '@/components/ScreenContainer';
+import { VoiceAvatarBubble } from '@/components/VoiceAvatarBubble';
 import { menzoAssets } from '@/constants/assets';
 import { useAppState } from '@/hooks/useAppState';
 import { useHaptics } from '@/hooks/useHaptics';
 import { useKeyboardBehavior } from '@/hooks/useKeyboardOffset';
+import { useRoomSocket } from '@/hooks/useRoomSocket';
 import { useToast } from '@/hooks/useToast';
 import { useVoiceRoom } from '@/hooks/useVoiceRoom';
 import { LOCAL_USER_ID } from '@/store/localUser';
@@ -43,12 +45,11 @@ export default function ChatDetailScreen() {
 
   const messages = useMemo(() => messagesForRoom(state.social, id), [state.social, id]);
   const [refreshing, setRefreshing] = useState(false);
+  const { typingUsers, publishTyping } = useRoomSocket(id);
 
   useEffect(() => {
     if (!room || !id) return;
     actions.loadRoomMessages(id);
-    const interval = setInterval(() => actions.loadRoomMessages(id), 5000);
-    return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, !!room]);
 
@@ -189,6 +190,7 @@ export default function ChatDetailScreen() {
         renderItem={({ item }) => (
           <ChatBubble message={item} author={findUser(state.social, item.authorId)} isOwn={item.authorId === LOCAL_USER_ID} />
         )}
+        ListFooterComponent={<TypingBubble typingUsers={typingUsers} />}
         onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
       />
     );
@@ -230,13 +232,14 @@ export default function ChatDetailScreen() {
             onPress={voice.connected ? voice.leave : voice.join}
             disabled={voice.connecting}
             accessibilityRole="button"
-            accessibilityLabel={voice.connected ? 'Salir de la voz' : 'Unirse a la voz'}
-            style={[styles.voicePill, voice.connected && { backgroundColor: accent.color }]}>
+            accessibilityLabel={voice.connected ? 'Salir del live' : 'Unirse al live'}
+            style={[styles.voicePill, voice.connected && styles.voicePillLive]}>
             {voice.connecting ? (
               <ActivityIndicator size="small" color="#FFFFFF" />
             ) : (
               <>
-                <Text style={styles.voicePillIcon}>🎙️</Text>
+                {voice.connected && <View style={styles.voicePillDot} />}
+                <Text style={styles.voicePillLabel}>Live</Text>
                 {voice.participants.length > 0 && <Text style={styles.voicePillCount}>{voice.participants.length}</Text>}
               </>
             )}
@@ -252,9 +255,14 @@ export default function ChatDetailScreen() {
             ) : (
               voice.participants.map((p) => (
                 <View key={p.id} style={styles.voiceChip}>
-                  <View style={[styles.voiceChipAvatar, voice.speakingUserIds.has(p.id) && { borderColor: accent.color }]}>
-                    <UserAvatar name={p.displayName} avatarUri={p.avatarUri} gradient={p.avatarGradient} size={24} />
-                  </View>
+                  <VoiceAvatarBubble
+                    name={p.displayName}
+                    avatarUri={p.avatarUri}
+                    gradient={p.avatarGradient}
+                    size={32}
+                    level={voice.speakingLevels.get(p.id) ?? 0}
+                    accentColor={accent.color}
+                  />
                   <Text style={styles.voiceChipLabel} numberOfLines={1}>
                     {p.displayName}
                   </Text>
@@ -296,7 +304,10 @@ export default function ChatDetailScreen() {
           </Pressable>
           <TextInput
             value={draft}
-            onChangeText={setDraft}
+            onChangeText={(text) => {
+              setDraft(text);
+              if (text.trim()) publishTyping();
+            }}
             placeholder="Escribe un mensaje…"
             placeholderTextColor={Colors.textMuted}
             style={styles.input}
@@ -347,14 +358,16 @@ const styles = StyleSheet.create({
   voicePill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
+    gap: 5,
     height: 32,
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     borderRadius: 16,
     backgroundColor: 'rgba(0,0,0,0.35)',
   },
-  voicePillIcon: { fontSize: 13 },
-  voicePillCount: { ...Typography.caption, fontSize: 11, fontWeight: '700', color: '#FFFFFF' },
+  voicePillLive: { backgroundColor: Colors.coral },
+  voicePillDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#FFFFFF' },
+  voicePillLabel: { ...Typography.caption, fontSize: 11, fontWeight: '800', color: '#FFFFFF', textTransform: 'uppercase', letterSpacing: 0.5 },
+  voicePillCount: { ...Typography.caption, fontSize: 11, fontWeight: '600', color: '#FFFFFF' },
   voiceBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -377,7 +390,6 @@ const styles = StyleSheet.create({
     paddingRight: 8,
     paddingLeft: 3,
   },
-  voiceChipAvatar: { borderRadius: 999, borderWidth: 2, borderColor: 'transparent' },
   voiceChipLabel: { ...Typography.caption, fontSize: 11, maxWidth: 90 },
   muteButton: {
     width: 32,

@@ -100,14 +100,14 @@ export default function OnlineScreen() {
           </ScrollView>
         )}
 
-        <Text style={styles.sectionTitle}>Recién regresaron</Text>
+        <Text style={styles.sectionTitle}>Nuevos miembros</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.membersRow}>
           {recentlyReturned.map((user) => (
             <MemberCard key={`returned-${user.id}`} user={user} variant="column" />
           ))}
         </ScrollView>
 
-        <Text style={styles.sectionTitle}>Quizá los recuerdes</Text>
+        <Text style={styles.sectionTitle}>Otros miembros</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.membersRow}>
           {maybeRemember.map((user) => (
             <MemberCard key={`memory-${user.id}`} user={user} variant="column" />

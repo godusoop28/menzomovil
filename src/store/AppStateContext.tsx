@@ -81,6 +81,7 @@ type AppStateContextValue = {
     ensurePostLoaded: (postId: string) => Promise<void>;
     ensureUserLoaded: (userId: string) => Promise<void>;
     loadRoomMessages: (roomId: string) => Promise<void>;
+    receiveRoomMessage: (dto: import('@/services/api').MessageDto) => void;
     loadProfileWall: (profileId: string) => Promise<void>;
     loadWallComments: (wallMessageId: string) => Promise<void>;
     addWallComment: (wallMessageId: string, body: string) => Promise<void>;
@@ -621,6 +622,14 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
+    /** Un mensaje empujado por WebSocket (propio o ajeno) — MERGE_SOCIAL ya deduplica por id, así
+     * que si este mismo mensaje ya se agregó de forma optimista via sendMessage() no se duplica. */
+    function receiveRoomMessage(dto: import('@/services/api').MessageDto) {
+      const myRealId = getMyRealId();
+      const users = dto.author ? [mapUserSummary(dto.author, myRealId)] : [];
+      dispatch({ type: 'MERGE_SOCIAL', payload: { messages: [mapMessage(dto, myRealId)], users } });
+    }
+
     async function loadProfileWall(profileId: string) {
       const targetId = profileId === LOCAL_USER_ID ? getMyRealId() : profileId;
       if (!targetId) return;
@@ -722,6 +731,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       ensurePostLoaded,
       ensureUserLoaded,
       loadRoomMessages,
+      receiveRoomMessage,
       loadProfileWall,
       loadWallComments,
       addWallComment,
