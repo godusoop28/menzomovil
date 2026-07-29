@@ -9,6 +9,7 @@ import { ActivityIndicator, KeyboardAvoidingView, Pressable, ScrollView, StyleSh
 import { AuraCard } from '@/components/AuraCard';
 import { ConfirmationModal } from '@/components/ConfirmationModal';
 import { GradientButton } from '@/components/GradientButton';
+import { HueColorPicker } from '@/components/HueColorPicker';
 import { IconButton } from '@/components/IconButton';
 import { InterestChip } from '@/components/InterestChip';
 import { ScreenContainer } from '@/components/ScreenContainer';
@@ -316,6 +317,7 @@ export default function EditProfileScreen() {
                 </Pressable>
               )}
             </View>
+            <HueColorPicker value={backgroundColor} onChange={handlePickBackgroundColor} />
           </View>
 
           <View style={styles.field}>

@@ -31,11 +31,14 @@ import { useHaptics } from '@/hooks/useHaptics';
 import { useKeyboardBehavior } from '@/hooks/useKeyboardOffset';
 import { useRoomSocket } from '@/hooks/useRoomSocket';
 import { useToast } from '@/hooks/useToast';
+import { chatApi, getMyRealId } from '@/services/api';
+import type { RoomRole } from '@/services/api/types';
 import { LOCAL_USER_ID } from '@/store/localUser';
 import { findRoom, findUser, messagesForRoom } from '@/store/selectors';
 import { useVoiceRoomContext } from '@/store/VoiceRoomContext';
 import { Colors, Radius, Spacing, Typography, useAccent } from '@/theme';
 import type { Message } from '@/types';
+import { dateSeparatorLabel, isSameDay } from '@/utils/time';
 
 const NEAR_BOTTOM_THRESHOLD_PX = 120;
 
@@ -71,8 +74,24 @@ export default function ChatDetailScreen() {
 
   const room = findRoom(state.social, id);
   const isDirect = room?.type === 'direct';
+  const [memberRoles, setMemberRoles] = useState<Map<string, RoomRole>>(new Map());
 
   const messages = useMemo(() => messagesForRoom(state.social, id), [state.social, id]);
+
+  useEffect(() => {
+    if (!id || room?.type !== 'public') return;
+    chatApi
+      .members(id)
+      .then((dtos) => {
+        const myRealId = getMyRealId();
+        const map = new Map<string, RoomRole>();
+        for (const dto of dtos) {
+          map.set(dto.user.id === myRealId ? LOCAL_USER_ID : dto.user.id, dto.role);
+        }
+        setMemberRoles(map);
+      })
+      .catch((error) => console.warn('[menzo/mobile] loadRoomMembers failed', error));
+  }, [id, room?.type]);
   const [refreshing, setRefreshing] = useState(false);
   const { typingUsers, publishTyping, removalReason } = useRoomSocket(id);
 
@@ -255,9 +274,33 @@ export default function ChatDetailScreen() {
         keyExtractor={(m) => m.id}
         contentContainerStyle={styles.list}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.textPrimary} />}
-        renderItem={({ item }) => (
-          <ChatBubble message={item} author={findUser(state.social, item.authorId)} isOwn={item.authorId === LOCAL_USER_ID} />
-        )}
+        renderItem={({ item, index }) => {
+          const prev = messages[index - 1];
+          const showDateSeparator = !prev || !isSameDay(prev.createdAt, item.createdAt);
+          const grouped =
+            !!prev &&
+            !showDateSeparator &&
+            item.type !== 'system' &&
+            prev.type === item.type &&
+            prev.authorId === item.authorId &&
+            new Date(item.createdAt).getTime() - new Date(prev.createdAt).getTime() < 5 * 60 * 1000;
+          return (
+            <View>
+              {showDateSeparator && (
+                <View style={styles.dateSeparator}>
+                  <Text style={styles.dateSeparatorText}>{dateSeparatorLabel(item.createdAt)}</Text>
+                </View>
+              )}
+              <ChatBubble
+                message={item}
+                author={findUser(state.social, item.authorId)}
+                isOwn={item.authorId === LOCAL_USER_ID}
+                role={memberRoles.get(item.authorId)}
+                grouped={grouped}
+              />
+            </View>
+          );
+        }}
         ListFooterComponent={<TypingBubble typingUsers={typingUsers} />}
         onScroll={handleScroll}
         scrollEventThrottle={100}
@@ -424,6 +467,20 @@ export default function ChatDetailScreen() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
+  dateSeparator: { alignItems: 'center', paddingVertical: Spacing.xs },
+  dateSeparatorText: {
+    ...Typography.caption,
+    fontSize: 10,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+    color: Colors.textMuted,
+    backgroundColor: Colors.surfaceSecondary,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    borderRadius: Radius.pill,
+    overflow: 'hidden',
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
