@@ -14,7 +14,13 @@
         "monochromeImage": "./assets/app-icons/android-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.sega2028.menzomovil"
+      "package": "com.sega2028.menzomovil",
+      "permissions": ["RECORD_AUDIO", "MODIFY_AUDIO_SETTINGS"]
+    },
+    "ios": {
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Menzo necesita acceder a tu micrófono para las salas de voz."
+      }
     },
     "web": {
       "output": "static",

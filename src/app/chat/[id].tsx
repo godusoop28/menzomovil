@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, KeyboardAvoidingView, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Image } from 'expo-image';
 
+import { UserAvatar } from '@/components/UserAvatar';
 import { ChatBubble } from '@/components/ChatBubble';
 import { MenzoImageBackground } from '@/components/common/MenzoImageBackground';
 import { EmptyState } from '@/components/EmptyState';
@@ -16,6 +17,7 @@ import { useAppState } from '@/hooks/useAppState';
 import { useHaptics } from '@/hooks/useHaptics';
 import { useKeyboardBehavior } from '@/hooks/useKeyboardOffset';
 import { useToast } from '@/hooks/useToast';
+import { useVoiceRoom } from '@/hooks/useVoiceRoom';
 import { LOCAL_USER_ID } from '@/store/localUser';
 import { findRoom, findUser, messagesForRoom } from '@/store/selectors';
 import { Colors, Radius, Spacing, Typography, useAccent } from '@/theme';
@@ -27,6 +29,7 @@ export default function ChatDetailScreen() {
   const { light } = useHaptics();
   const showToast = useToast();
   const accent = useAccent();
+  const voice = useVoiceRoom(id);
   const behavior = useKeyboardBehavior();
   const listRef = useRef<FlatList<Message>>(null);
   const [draft, setDraft] = useState('');
@@ -55,6 +58,13 @@ export default function ChatDetailScreen() {
     await actions.loadRoomMessages(id);
     setRefreshing(false);
   }, [actions, id]);
+
+  useEffect(() => {
+    if (voice.permissionDenied) {
+      showToast('Necesitamos acceso al micrófono para unirte a la voz.');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voice.permissionDenied]);
 
   const headerTitle = isDirect ? room?.peer?.displayName ?? 'Conversación' : room?.name ?? 'Conversación';
   const headerOnline = isDirect ? !!room?.peer?.isOnline : !!room && room.onlineCount > 0;
@@ -216,8 +226,53 @@ export default function ChatDetailScreen() {
             style={styles.headerIconButton}>
             {busyBackground ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Ionicons name="color-palette-outline" size={16} color="#FFFFFF" />}
           </Pressable>
+          <Pressable
+            onPress={voice.connected ? voice.leave : voice.join}
+            disabled={voice.connecting}
+            accessibilityRole="button"
+            accessibilityLabel={voice.connected ? 'Salir de la voz' : 'Unirse a la voz'}
+            style={[styles.voicePill, voice.connected && { backgroundColor: accent.color }]}>
+            {voice.connecting ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <>
+                <Text style={styles.voicePillIcon}>🎙️</Text>
+                {voice.participants.length > 0 && <Text style={styles.voicePillCount}>{voice.participants.length}</Text>}
+              </>
+            )}
+          </Pressable>
         </View>
       </View>
+
+      {(voice.connected || voice.participants.length > 0) && (
+        <View style={styles.voiceBar}>
+          <View style={styles.voiceBarParticipants}>
+            {voice.participants.length === 0 ? (
+              <Text style={styles.voiceBarEmpty}>Nadie en la voz todavía</Text>
+            ) : (
+              voice.participants.map((p) => (
+                <View key={p.id} style={styles.voiceChip}>
+                  <View style={[styles.voiceChipAvatar, voice.speakingUserIds.has(p.id) && { borderColor: accent.color }]}>
+                    <UserAvatar name={p.displayName} avatarUri={p.avatarUri} gradient={p.avatarGradient} size={24} />
+                  </View>
+                  <Text style={styles.voiceChipLabel} numberOfLines={1}>
+                    {p.displayName}
+                  </Text>
+                </View>
+              ))
+            )}
+          </View>
+          {voice.connected && (
+            <Pressable
+              onPress={voice.toggleMute}
+              accessibilityRole="button"
+              accessibilityLabel={voice.muted ? 'Activar micrófono' : 'Silenciar micrófono'}
+              style={[styles.muteButton, voice.muted && styles.muteButtonActive]}>
+              <Ionicons name={voice.muted ? 'mic-off' : 'mic'} size={16} color={voice.muted ? Colors.coral : Colors.textPrimary} />
+            </Pressable>
+          )}
+        </View>
+      )}
 
       <KeyboardAvoidingView behavior={behavior} style={styles.flex} keyboardVerticalOffset={90}>
         {room.backgroundUri ? (
@@ -289,6 +344,50 @@ const styles = StyleSheet.create({
   headerTitle: { ...Typography.h3, color: Colors.textPrimary },
   headerSubtitle: { ...Typography.caption, color: Colors.green },
   headerSubtitleOffline: { color: Colors.textMuted },
+  voicePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    height: 32,
+    paddingHorizontal: 10,
+    borderRadius: 16,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+  },
+  voicePillIcon: { fontSize: 13 },
+  voicePillCount: { ...Typography.caption, fontSize: 11, fontWeight: '700', color: '#FFFFFF' },
+  voiceBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.borderSoft,
+    backgroundColor: Colors.surface,
+  },
+  voiceBarParticipants: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.xs },
+  voiceBarEmpty: { ...Typography.caption, color: Colors.textMuted },
+  voiceChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: Colors.surfaceSecondary,
+    borderRadius: 999,
+    paddingVertical: 3,
+    paddingRight: 8,
+    paddingLeft: 3,
+  },
+  voiceChipAvatar: { borderRadius: 999, borderWidth: 2, borderColor: 'transparent' },
+  voiceChipLabel: { ...Typography.caption, fontSize: 11, maxWidth: 90 },
+  muteButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.surfaceSecondary,
+  },
+  muteButtonActive: { backgroundColor: 'rgba(251,113,133,0.15)' },
   list: { padding: Spacing.lg, gap: Spacing.sm },
   previewRow: {
     flexDirection: 'row',

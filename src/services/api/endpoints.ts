@@ -27,6 +27,8 @@ import type {
   UpdateSettingsRequest,
   UploadResponseDto,
   UserProfileDto,
+  VoiceParticipantsDto,
+  VoiceTokenDto,
   WallCommentDto,
   WallMessageDto,
 } from './types';
@@ -122,6 +124,13 @@ export const chatApi = {
     apiFetch<PageResponse<MessageDto>>(`/api/chat/rooms/${id}/messages${qs({ page, size })}`),
   sendMessage: (id: string, body: SendMessageRequest) =>
     apiFetch<MessageDto>(`/api/chat/rooms/${id}/messages`, { method: 'POST', body }),
+};
+
+export const voiceApi = {
+  getToken: (roomId: string) => apiFetch<VoiceTokenDto>(`/api/chat/rooms/${roomId}/voice/token`, { method: 'POST' }),
+  join: (roomId: string) => apiFetch<VoiceParticipantsDto>(`/api/chat/rooms/${roomId}/voice/join`, { method: 'POST' }),
+  leave: (roomId: string) => apiFetch<VoiceParticipantsDto>(`/api/chat/rooms/${roomId}/voice/leave`, { method: 'POST' }),
+  participants: (roomId: string) => apiFetch<VoiceParticipantsDto>(`/api/chat/rooms/${roomId}/voice/participants`),
 };
 
 export const communityApi = {

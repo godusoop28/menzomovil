@@ -212,6 +212,17 @@ export type ChatRoomLastMessageDto = {
   createdAt: string;
 };
 
+export type VoiceTokenDto = {
+  appId: string;
+  channelName: string;
+  token: string;
+  uid: string;
+};
+
+export type VoiceParticipantsDto = {
+  participants: UserSummaryDto[];
+};
+
 export type MessageDto = {
   id: string;
   roomId: string;
