@@ -7,6 +7,7 @@ import { ChatRoomCard } from '@/components/ChatRoomCard';
 import { CommunityHero } from '@/components/CommunityHero';
 import { EmptyState } from '@/components/EmptyState';
 import { FeaturedPostCard } from '@/components/FeaturedPostCard';
+import { LiveRoomsCarousel } from '@/components/LiveRoomsCarousel';
 import { PostCard } from '@/components/PostCard';
 import { ScreenContainer } from '@/components/ScreenContainer';
 import { SegmentedTabs } from '@/components/SegmentedTabs';
@@ -48,6 +49,15 @@ export default function HomeScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, roomSort]);
 
+  useEffect(() => {
+    actions.loadLiveRooms();
+    const interval = setInterval(() => actions.loadLiveRooms(), 15000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const liveRooms = useMemo(() => state.social.rooms.filter((r) => r.type === 'public' && r.live), [state.social.rooms]);
+
   const discoverRooms = useMemo(() => {
     const list = state.social.rooms.filter((r) => r.type === 'public');
     return [...list].sort((a, b) =>
@@ -81,6 +91,8 @@ export default function HomeScreen() {
         </View>
 
         <CommunityHero previewMembers={onlineMembers} />
+
+        <LiveRoomsCarousel rooms={liveRooms} />
 
         <View style={styles.tabsWrap}>
           <SegmentedTabs

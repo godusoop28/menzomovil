@@ -31,9 +31,9 @@ import { useHaptics } from '@/hooks/useHaptics';
 import { useKeyboardBehavior } from '@/hooks/useKeyboardOffset';
 import { useRoomSocket } from '@/hooks/useRoomSocket';
 import { useToast } from '@/hooks/useToast';
-import { useVoiceRoom } from '@/hooks/useVoiceRoom';
 import { LOCAL_USER_ID } from '@/store/localUser';
 import { findRoom, findUser, messagesForRoom } from '@/store/selectors';
+import { useVoiceRoomContext } from '@/store/VoiceRoomContext';
 import { Colors, Radius, Spacing, Typography, useAccent } from '@/theme';
 import type { Message } from '@/types';
 
@@ -45,7 +45,19 @@ export default function ChatDetailScreen() {
   const { light } = useHaptics();
   const showToast = useToast();
   const accent = useAccent();
-  const voice = useVoiceRoom(id);
+  const voiceCtx = useVoiceRoomContext();
+  const isThisRoomLive = voiceCtx.activeRoomId === id;
+  const voice = {
+    connected: voiceCtx.connected && isThisRoomLive,
+    connecting: voiceCtx.connecting && isThisRoomLive,
+    muted: voiceCtx.muted,
+    permissionDenied: voiceCtx.permissionDenied,
+    participants: isThisRoomLive ? voiceCtx.participants : [],
+    speakingLevels: isThisRoomLive ? voiceCtx.speakingLevels : new Map<string, number>(),
+    join: () => (id ? voiceCtx.join(id) : Promise.resolve()),
+    leave: voiceCtx.leave,
+    toggleMute: voiceCtx.toggleMute,
+  };
   const behavior = useKeyboardBehavior();
   const listRef = useRef<FlatList<Message>>(null);
   const [draft, setDraft] = useState('');

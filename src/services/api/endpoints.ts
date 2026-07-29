@@ -114,6 +114,7 @@ export const chatApi = {
   rooms: () => apiFetch<ChatRoomDto[]>('/api/chat/rooms'),
   discover: (sort: 'recent' | 'popular' = 'recent') =>
     apiFetch<ChatRoomDto[]>(`/api/chat/rooms/discover${qs({ sort })}`),
+  liveRooms: () => apiFetch<ChatRoomDto[]>('/api/chat/rooms/live'),
   getRoom: (id: string) => apiFetch<ChatRoomDto>(`/api/chat/rooms/${id}`),
   openDirect: (userId: string) => apiFetch<ChatRoomDto>(`/api/chat/rooms/dm/${userId}`, { method: 'POST' }),
   createRoom: (body: CreateRoomRequest) => apiFetch<ChatRoomDto>('/api/chat/rooms', { method: 'POST', body }),

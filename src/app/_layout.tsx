@@ -8,8 +8,10 @@ import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { PersistentVoiceBubble } from '@/components/PersistentVoiceBubble';
 import { ServerWakingBanner } from '@/components/ServerWakingBanner';
 import { AppStateProvider, useAppState } from '@/store/AppStateContext';
+import { VoiceRoomProvider } from '@/store/VoiceRoomContext';
 import { AccentProvider, Colors } from '@/theme';
 import { ToastProvider } from '@/hooks/useToast';
 
@@ -58,24 +60,27 @@ export default function RootLayout() {
         <ToastProvider>
           <AppStateProvider>
             <AccentProvider>
-              <HydrationGate>
-                <StatusBar style="light" />
-                <ServerWakingBanner />
-                <Stack
-                  screenOptions={{
-                    headerShown: false,
-                    contentStyle: { backgroundColor: Colors.background },
-                    animation: 'slide_from_right',
-                  }}>
-                  <Stack.Screen name="index" options={{ animation: 'fade' }} />
-                  <Stack.Screen name="onboarding" options={{ animation: 'fade' }} />
-                  <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
-                  <Stack.Screen
-                    name="create"
-                    options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
-                  />
-                </Stack>
-              </HydrationGate>
+              <VoiceRoomProvider>
+                <HydrationGate>
+                  <StatusBar style="light" />
+                  <ServerWakingBanner />
+                  <Stack
+                    screenOptions={{
+                      headerShown: false,
+                      contentStyle: { backgroundColor: Colors.background },
+                      animation: 'slide_from_right',
+                    }}>
+                    <Stack.Screen name="index" options={{ animation: 'fade' }} />
+                    <Stack.Screen name="onboarding" options={{ animation: 'fade' }} />
+                    <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
+                    <Stack.Screen
+                      name="create"
+                      options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+                    />
+                  </Stack>
+                  <PersistentVoiceBubble />
+                </HydrationGate>
+              </VoiceRoomProvider>
             </AccentProvider>
           </AppStateProvider>
         </ToastProvider>

@@ -15,12 +15,19 @@
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.sega2028.menzomovil",
-      "permissions": ["RECORD_AUDIO", "MODIFY_AUDIO_SETTINGS"],
+      "permissions": [
+        "RECORD_AUDIO",
+        "MODIFY_AUDIO_SETTINGS",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_MICROPHONE",
+        "POST_NOTIFICATIONS"
+      ],
       "softwareKeyboardLayoutMode": "resize"
     },
     "ios": {
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "Menzo necesita acceder a tu micrófono para las salas de voz."
+        "NSMicrophoneUsageDescription": "Menzo necesita acceder a tu micrófono para las salas de voz.",
+        "UIBackgroundModes": ["audio"]
       }
     },
     "web": {
@@ -48,8 +55,7 @@
         "expo-image-picker",
         {
           "photosPermission": "Menzo necesita acceder a tus fotos para que elijas un avatar o compartas una imagen en tus publicaciones.",
-          "cameraPermission": false,
-          "microphonePermission": false
+          "cameraPermission": false
         }
       ]
     ],
