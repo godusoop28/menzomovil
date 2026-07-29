@@ -175,6 +175,7 @@ export function mapWallMessage(dto: WallMessageDto, myRealId: string | null): Wa
     profileId: dto.profileId,
     authorId: alias(dto.author.id, myRealId),
     body: dto.body,
+    imageUri: dto.imageUri ?? undefined,
     createdAt: dto.createdAt,
     commentCount: dto.commentCount,
   };
@@ -184,8 +185,10 @@ export function mapWallComment(dto: WallCommentDto, myRealId: string | null): Wa
   return {
     id: dto.id,
     wallMessageId: dto.wallMessageId,
+    parentCommentId: dto.parentCommentId ?? undefined,
     authorId: alias(dto.author.id, myRealId),
     body: dto.body,
+    imageUri: dto.imageUri ?? undefined,
     createdAt: dto.createdAt,
     likeCount: dto.likeCount,
     likedByMe: dto.likedByMe,

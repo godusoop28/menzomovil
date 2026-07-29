@@ -71,13 +71,18 @@ export const usersApi = {
   following: (id: string) => apiFetch<UserProfileDto[]>(`/api/users/${id}/following`),
   wall: (id: string, page = 0, size = 20) =>
     apiFetch<PageResponse<WallMessageDto>>(`/api/users/${id}/wall${qs({ page, size })}`),
-  postWall: (id: string, body: string) =>
-    apiFetch<WallMessageDto>(`/api/users/${id}/wall`, { method: 'POST', body: { body } }),
+  postWall: (id: string, body: string, imageUri?: string) =>
+    apiFetch<WallMessageDto>(`/api/users/${id}/wall`, { method: 'POST', body: { body, imageUri } }),
   posts: (id: string, page = 0, size = 20) =>
     apiFetch<PageResponse<PostDto>>(`/api/users/${id}/posts${qs({ page, size })}`),
-  wallComments: (messageId: string) => apiFetch<WallCommentDto[]>(`/api/wall/${messageId}/comments`),
-  addWallComment: (messageId: string, body: string) =>
-    apiFetch<WallCommentDto>(`/api/wall/${messageId}/comments`, { method: 'POST', body: { body } }),
+  wallComments: (messageId: string, page = 0, size = 30) =>
+    apiFetch<PageResponse<WallCommentDto>>(`/api/wall/${messageId}/comments${qs({ page, size })}`),
+  addWallComment: (messageId: string, body: string, imageUri?: string, parentCommentId?: string) =>
+    apiFetch<WallCommentDto>(`/api/wall/${messageId}/comments`, {
+      method: 'POST',
+      body: { body, imageUri, parentCommentId },
+    }),
+  deleteWallComment: (commentId: string) => apiFetch<void>(`/api/wall/comments/${commentId}`, { method: 'DELETE' }),
   likeWallComment: (commentId: string) => apiFetch<void>(`/api/wall/comments/${commentId}/like`, { method: 'PUT' }),
   unlikeWallComment: (commentId: string) =>
     apiFetch<void>(`/api/wall/comments/${commentId}/like`, { method: 'DELETE' }),

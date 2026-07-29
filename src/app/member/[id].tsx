@@ -8,6 +8,7 @@ import { PostCard } from '@/components/PostCard';
 import { ProfileHeader } from '@/components/ProfileHeader';
 import { ScreenContainer } from '@/components/ScreenContainer';
 import { SegmentedTabs } from '@/components/SegmentedTabs';
+import { WallComposer } from '@/components/WallComposer';
 import { WallMessageCard } from '@/components/WallMessageCard';
 import { useAppState } from '@/hooks/useAppState';
 import { useToast } from '@/hooks/useToast';
@@ -115,12 +116,16 @@ export default function MemberProfileScreen() {
               posts.map((post) => <PostCard key={post.id} post={post} />)
             ))}
 
-          {tab === 'wall' &&
-            (wall.length === 0 ? (
-              <EmptyState title="Este muro todavía espera su primer recuerdo." preset="memory" />
-            ) : (
-              wall.map((message) => <WallMessageCard key={message.id} message={message} />)
-            ))}
+          {tab === 'wall' && (
+            <View style={styles.wallWrap}>
+              <WallComposer profileId={user.id} placeholder={`Escribe algo para ${user.displayName}…`} />
+              {wall.length === 0 ? (
+                <EmptyState title="Este muro todavía espera su primer recuerdo." preset="memory" />
+              ) : (
+                wall.map((message) => <WallMessageCard key={message.id} message={message} />)
+              )}
+            </View>
+          )}
         </View>
       </ScrollView>
     </ScreenContainer>
@@ -139,4 +144,5 @@ const styles = StyleSheet.create({
   scroll: { paddingBottom: Spacing.xxl },
   tabsWrap: { paddingHorizontal: Spacing.lg, marginTop: Spacing.lg },
   body: { paddingHorizontal: Spacing.lg, marginTop: Spacing.md, gap: Spacing.md },
+  wallWrap: { gap: Spacing.md },
 });

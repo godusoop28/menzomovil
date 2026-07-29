@@ -112,20 +112,29 @@ export type WallMessageDto = {
   profileId: string;
   author: UserSummaryDto;
   body: string;
+  imageUri: string | null;
   createdAt: string;
   commentCount: number;
 };
 
-export type WallCommentRequest = { body: string };
+export type WallCommentRequest = { body: string; imageUri?: string; parentCommentId?: string };
 
 export type WallCommentDto = {
   id: string;
   wallMessageId: string;
+  parentCommentId: string | null;
   author: UserSummaryDto;
   body: string;
+  imageUri: string | null;
   createdAt: string;
   likeCount: number;
   likedByMe: boolean;
+};
+
+export type WallCommentEventDto = {
+  type: 'created' | 'deleted';
+  comment: WallCommentDto | null;
+  deletedCommentId: string | null;
 };
 
 export type AuraDto = { id: string; name: string; description: string; gradient: string };
