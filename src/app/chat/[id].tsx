@@ -176,13 +176,8 @@ export default function ChatDetailScreen() {
         keyExtractor={(m) => m.id}
         contentContainerStyle={styles.list}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.textPrimary} />}
-        renderItem={({ item, index }) => (
-          <ChatBubble
-            message={item}
-            author={findUser(state.social, item.authorId)}
-            isOwn={item.authorId === LOCAL_USER_ID}
-            showAvatar={index === 0 || messages[index - 1].authorId !== item.authorId}
-          />
+        renderItem={({ item }) => (
+          <ChatBubble message={item} author={findUser(state.social, item.authorId)} isOwn={item.authorId === LOCAL_USER_ID} />
         )}
         onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
       />

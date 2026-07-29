@@ -1,22 +1,24 @@
 import { router } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { AppHeader } from '@/components/AppHeader';
 import { ChatRoomCard } from '@/components/ChatRoomCard';
 import { EmptyState } from '@/components/EmptyState';
 import { IconButton } from '@/components/IconButton';
 import { ScreenContainer } from '@/components/ScreenContainer';
-import { SecondaryButton } from '@/components/SecondaryButton';
 import { MenzoDrawerContent } from '@/components/navigation/MenzoDrawerContent';
 import { useMenzoDrawer } from '@/hooks/useMenzoDrawer';
+import { useHaptics } from '@/hooks/useHaptics';
 import { useAppState } from '@/hooks/useAppState';
 import { menzoAssets } from '@/constants/assets';
-import { BottomTabBarHeight, Colors, Spacing, Typography } from '@/theme';
+import { BottomTabBarHeight, Colors, Radius, Spacing, Typography, useAccent } from '@/theme';
 
 export default function ChatsScreen() {
   const { state, actions } = useAppState();
   const drawer = useMenzoDrawer();
+  const accent = useAccent();
+  const { selection } = useHaptics();
   const [refreshing, setRefreshing] = useState(false);
 
   const myRooms = state.social.rooms.filter((r) => r.type === 'direct' || r.joined);
@@ -49,7 +51,16 @@ export default function ChatsScreen() {
         contentContainerStyle={[styles.scroll, { paddingBottom: BottomTabBarHeight + Spacing.xl }]}>
         <View style={styles.titleRow}>
           <Text style={styles.title}>Mis chats</Text>
-          <SecondaryButton label="Crear sala" onPress={() => router.push('/create/room')} />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Crear sala"
+            onPress={() => {
+              selection();
+              router.push('/create/room');
+            }}
+            style={[styles.createPill, { backgroundColor: accent.color }]}>
+            <Text style={styles.createPillLabel}>+ Crear sala</Text>
+          </Pressable>
         </View>
 
         {favoriteRooms.length > 0 && (
@@ -97,4 +108,6 @@ const styles = StyleSheet.create({
   sectionTitle: { ...Typography.h3, color: Colors.textPrimary },
   hRow: { gap: Spacing.md, paddingVertical: Spacing.xs },
   list: { gap: Spacing.sm },
+  createPill: { paddingHorizontal: Spacing.md, paddingVertical: 9, borderRadius: Radius.pill },
+  createPillLabel: { ...Typography.label, fontSize: 13, fontWeight: '700', color: Colors.textOnAccent },
 });

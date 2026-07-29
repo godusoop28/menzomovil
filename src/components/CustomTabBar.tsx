@@ -6,6 +6,8 @@ import { router } from 'expo-router';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { UserAvatar } from './UserAvatar';
+import { useAppState } from '@/hooks/useAppState';
 import { useHaptics } from '@/hooks/useHaptics';
 import { Colors, Radius, Spacing, Typography, useAccent } from '@/theme';
 
@@ -20,6 +22,8 @@ export function CustomTabBar({ state, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
   const { light, medium } = useHaptics();
   const accent = useAccent();
+  const { state: appState } = useAppState();
+  const profile = appState.profile;
 
   const leftRoutes = state.routes.slice(0, 2);
   const rightRoutes = state.routes.slice(2);
@@ -41,11 +45,17 @@ export function CustomTabBar({ state, navigation }: BottomTabBarProps) {
           if (!focused) navigation.navigate(route.name);
         }}
         style={styles.tabButton}>
-        <Ionicons
-          name={focused ? meta.iconActive : meta.icon}
-          size={23}
-          color={focused ? accent.color : Colors.textMuted}
-        />
+        {route.name === 'profile' && profile ? (
+          <View style={[styles.profileTabAvatar, focused && { borderColor: accent.color }]}>
+            <UserAvatar name={profile.displayName} avatarUri={profile.avatarUri} gradient={profile.avatarGradient} size={22} />
+          </View>
+        ) : (
+          <Ionicons
+            name={focused ? meta.iconActive : meta.icon}
+            size={23}
+            color={focused ? accent.color : Colors.textMuted}
+          />
+        )}
         <Text style={[styles.tabLabel, focused && styles.tabLabelActive, focused && { color: accent.color }]}>
           {meta.label}
         </Text>
@@ -99,6 +109,7 @@ const styles = StyleSheet.create({
   },
   side: { flexDirection: 'row', flex: 1, justifyContent: 'space-around' },
   tabButton: { alignItems: 'center', gap: 3, minWidth: 56, paddingVertical: 4 },
+  profileTabAvatar: { borderRadius: 999, borderWidth: 2, borderColor: 'transparent' },
   tabLabel: { ...Typography.caption, fontSize: 11, color: Colors.textMuted },
   tabLabelActive: { fontWeight: '700' },
   createButtonWrap: {

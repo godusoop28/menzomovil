@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { AppHeader } from '@/components/AppHeader';
 import { ChatRoomCard } from '@/components/ChatRoomCard';
@@ -9,15 +9,15 @@ import { EmptyState } from '@/components/EmptyState';
 import { FeaturedPostCard } from '@/components/FeaturedPostCard';
 import { PostCard } from '@/components/PostCard';
 import { ScreenContainer } from '@/components/ScreenContainer';
-import { SecondaryButton } from '@/components/SecondaryButton';
 import { SegmentedTabs } from '@/components/SegmentedTabs';
 import { MenzoImageBackground } from '@/components/common/MenzoImageBackground';
 import { MenzoDrawerContent } from '@/components/navigation/MenzoDrawerContent';
 import { menzoAssets } from '@/constants/assets';
 import { useAppState } from '@/hooks/useAppState';
+import { useHaptics } from '@/hooks/useHaptics';
 import { useMenzoDrawer } from '@/hooks/useMenzoDrawer';
 import { featuredPosts, onlineUsers, recentPosts } from '@/store/selectors';
-import { BottomTabBarHeight, Colors, Spacing, Typography } from '@/theme';
+import { BottomTabBarHeight, Colors, Radius, Spacing, Typography, useAccent } from '@/theme';
 
 type HomeTab = 'recientes' | 'destacados' | 'descubrir';
 type RoomSort = 'recent' | 'popular';
@@ -29,6 +29,8 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [joiningId, setJoiningId] = useState<string | null>(null);
   const drawer = useMenzoDrawer();
+  const accent = useAccent();
+  const { selection } = useHaptics();
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -149,7 +151,16 @@ export default function HomeScreen() {
                   Explora todas las salas públicas y únete a las que te llamen la atención.
                 </Text>
               </View>
-              <SecondaryButton label="Crear sala" onPress={() => router.push('/create/room')} />
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Crear sala"
+                onPress={() => {
+                  selection();
+                  router.push('/create/room');
+                }}
+                style={[styles.createPill, { backgroundColor: accent.color }]}>
+                <Text style={styles.createPillLabel}>+ Crear sala</Text>
+              </Pressable>
             </View>
 
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
@@ -204,6 +215,8 @@ const styles = StyleSheet.create({
   hScroll: { gap: Spacing.md, paddingRight: Spacing.lg },
   hangoutHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: Spacing.sm },
   hangoutHeaderText: { flex: 1, gap: 2 },
+  createPill: { paddingHorizontal: Spacing.md, paddingVertical: 9, borderRadius: Radius.pill },
+  createPillLabel: { ...Typography.label, fontSize: 13, fontWeight: '700', color: Colors.textOnAccent },
   hangoutTitle: { ...Typography.h2, color: Colors.textPrimary },
   hangoutSubtitle: { ...Typography.body, color: Colors.textSecondary, marginBottom: Spacing.xs },
   filterRow: { gap: Spacing.sm, paddingVertical: Spacing.xs },

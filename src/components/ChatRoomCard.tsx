@@ -49,16 +49,23 @@ export function ChatRoomCard({ room, compact, onJoin, joining }: Props) {
           showOnline
           online={room.peer.isOnline}
         />
-      ) : room.coverUri ? (
-        <Image source={{ uri: room.coverUri }} style={styles.icon} contentFit="cover" />
       ) : (
-        <LinearGradient
-          colors={Gradients[room.gradient] as unknown as [string, string, ...string[]]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.icon}>
-          <Ionicons name={room.icon as never} size={22} color="#FFFFFF" />
-        </LinearGradient>
+        <View style={styles.publicIconWrap}>
+          {room.coverUri ? (
+            <Image source={{ uri: room.coverUri }} style={styles.icon} contentFit="cover" />
+          ) : (
+            <LinearGradient
+              colors={Gradients[room.gradient] as unknown as [string, string, ...string[]]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.icon}>
+              <Ionicons name={room.icon as never} size={22} color="#FFFFFF" />
+            </LinearGradient>
+          )}
+          <Text style={styles.publicIconCaption} numberOfLines={1}>
+            Sala pública
+          </Text>
+        </View>
       )}
 
       <View style={styles.info}>
@@ -130,7 +137,9 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
   },
   compact: { width: 220 },
+  publicIconWrap: { alignItems: 'center', gap: 3 },
   icon: { width: 48, height: 48, borderRadius: Radius.md, alignItems: 'center', justifyContent: 'center' },
+  publicIconCaption: { ...Typography.caption, fontSize: 8, textTransform: 'uppercase', letterSpacing: 0.4, color: Colors.textMuted },
   info: { flex: 1, gap: 2 },
   titleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   name: { ...Typography.bodyMedium, color: Colors.textPrimary, flexShrink: 1 },

@@ -10,10 +10,9 @@ type Props = {
   message: Message;
   author?: DemoUser;
   isOwn: boolean;
-  showAvatar?: boolean;
 };
 
-export function ChatBubble({ message, author, isOwn, showAvatar = true }: Props) {
+export function ChatBubble({ message, author, isOwn }: Props) {
   const accent = useAccent();
 
   if (message.type === 'system') {
@@ -26,25 +25,15 @@ export function ChatBubble({ message, author, isOwn, showAvatar = true }: Props)
 
   return (
     <View style={[styles.row, isOwn && styles.rowOwn]}>
-      {showAvatar ? (
-        <UserAvatar
-          name={author?.displayName ?? '?'}
-          avatarUri={author?.avatarUri}
-          gradient={author?.avatarGradient ?? 'fire'}
-          size={30}
-          level={author?.level}
-        />
-      ) : (
-        <View style={styles.avatarSpacer} />
-      )}
-      <View
-        style={[
-          styles.bubble,
-          isOwn
-            ? [{ backgroundColor: accent.color }, showAvatar && styles.bubbleOwnTail]
-            : [styles.bubbleOther, showAvatar && styles.bubbleOtherTail],
-        ]}>
-        {!isOwn && showAvatar && <Text style={styles.author}>{author?.displayName ?? 'Miembro'}</Text>}
+      <UserAvatar
+        name={author?.displayName ?? '?'}
+        avatarUri={author?.avatarUri}
+        gradient={author?.avatarGradient ?? 'fire'}
+        size={30}
+        level={author?.level}
+      />
+      <View style={[styles.bubble, isOwn ? [{ backgroundColor: accent.color }, styles.bubbleOwnTail] : [styles.bubbleOther, styles.bubbleOtherTail]]}>
+        {!isOwn && <Text style={styles.author}>{author?.displayName ?? 'Miembro'}</Text>}
         {!!message.imageUri && (
           <Image source={{ uri: message.imageUri }} style={styles.image} contentFit="cover" />
         )}
@@ -69,7 +58,6 @@ const styles = StyleSheet.create({
   },
   row: { flexDirection: 'row', gap: Spacing.xs, alignItems: 'flex-end', maxWidth: '86%' },
   rowOwn: { alignSelf: 'flex-end', flexDirection: 'row-reverse' },
-  avatarSpacer: { width: 30 },
   bubble: { borderRadius: Radius.md, paddingVertical: Spacing.sm, paddingHorizontal: Spacing.md, gap: 4 },
   bubbleOwnTail: { borderTopRightRadius: 4 },
   bubbleOther: { backgroundColor: Colors.surfaceSecondary },

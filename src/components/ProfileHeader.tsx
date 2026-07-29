@@ -82,7 +82,10 @@ export function ProfileHeader({ user, isOwnProfile, isFollowing, onToggleFollow,
         <Text style={styles.status}>{user.statusText}</Text>
 
         <View style={styles.levelRow}>
-          <Text style={styles.levelText}>Nivel {user.level}</Text>
+          <View style={styles.levelPill}>
+            <Text style={styles.levelPillIcon}>★</Text>
+            <Text style={styles.levelText}>Nivel {user.level}</Text>
+          </View>
           <View style={styles.xpBarTrack}>
             <View style={[styles.xpBarFill, { width: `${100 - (xpToNext / 500) * 100}%` }]} />
           </View>
@@ -132,7 +135,19 @@ const styles = StyleSheet.create({
   friendBadgeLabel: { ...Typography.caption, color: Colors.cyan, fontWeight: '600' },
   status: { ...Typography.caption, color: Colors.textSecondary, marginTop: 2 },
   levelRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginTop: Spacing.sm },
-  levelText: { ...Typography.label, color: Colors.yellow },
+  levelPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,190,46,0.4)',
+    backgroundColor: 'rgba(255,190,46,0.1)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  levelPillIcon: { fontSize: 11, color: Colors.yellow },
+  levelText: { ...Typography.label, fontSize: 12, color: Colors.yellow },
   xpBarTrack: { flex: 1, height: 6, borderRadius: 3, backgroundColor: Colors.surfaceSecondary, overflow: 'hidden' },
   xpBarFill: { height: 6, backgroundColor: Colors.yellow },
   statsRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: Spacing.lg },
