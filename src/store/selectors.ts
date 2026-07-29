@@ -1,3 +1,5 @@
+import type { Message } from '@/types';
+
 import type { SocialState } from './types';
 
 /** Date.parse en Hermes puede devolver NaN para timestamps mal formados; tratarlo como 0
@@ -15,6 +17,19 @@ function byCreatedAtAsc<T extends { createdAt: string; id: string }>(a: T, b: T)
 
 function byCreatedAtDesc<T extends { createdAt: string; id: string }>(a: T, b: T): number {
   return safeTime(b.createdAt) - safeTime(a.createdAt) || b.id.localeCompare(a.id);
+}
+
+/** Igual que byCreatedAtAsc, pero para mensajes de chat: si createdAt no se puede parsear, usa
+ * receivedAt (capturado una sola vez al construir el mensaje, ver mapMessage) en vez de caer a 0
+ * — así un mensaje con fecha inválida cae cerca de donde realmente llegó, no al principio de la
+ * lista. Nunca llama Date.now() acá: el valor ya fue capturado antes, en el momento de recepción. */
+function messageSortKey(m: Message): number {
+  const t = new Date(m.createdAt).getTime();
+  return Number.isNaN(t) ? m.receivedAt : t;
+}
+
+function byMessageOrder(a: Message, b: Message): number {
+  return messageSortKey(a) - messageSortKey(b) || a.id.localeCompare(b.id);
 }
 
 export function findUser(social: SocialState, userId: string) {
@@ -38,7 +53,7 @@ export function commentsForPost(social: SocialState, postId: string) {
 }
 
 export function messagesForRoom(social: SocialState, roomId: string) {
-  return social.messages.filter((m) => m.roomId === roomId).sort(byCreatedAtAsc);
+  return social.messages.filter((m) => m.roomId === roomId).sort(byMessageOrder);
 }
 
 export function wallMessagesForProfile(social: SocialState, profileId: string) {

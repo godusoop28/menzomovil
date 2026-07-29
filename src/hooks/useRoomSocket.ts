@@ -34,12 +34,22 @@ export function useRoomSocket(roomId: string | undefined) {
     if (!session) return;
 
     const typingTimeouts = typingTimeoutsRef.current;
+    let hasConnectedBefore = false;
 
     const client = new Client({
       brokerURL: wsUrl(),
       connectHeaders: { Authorization: `Bearer ${session.accessToken}` },
       reconnectDelay: 3000,
       onConnect: () => {
+        // stompjs vuelve a llamar onConnect en cada reconexión automática (misma instancia de
+        // Client, se resuscribe solo). Si esta NO es la primera vez, algo pudo perderse mientras
+        // estuvimos desconectados — se vuelve a pedir el historial de la sala; MERGE_SOCIAL
+        // dedupea por id así que no duplica nada de lo que ya teníamos.
+        if (hasConnectedBefore) {
+          actions.loadRoomMessages(roomId);
+        }
+        hasConnectedBefore = true;
+
         client.subscribe(`/topic/rooms/${roomId}/messages`, (frame) => {
           actions.receiveRoomMessage(JSON.parse(frame.body));
         });

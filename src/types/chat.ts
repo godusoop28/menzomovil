@@ -10,6 +10,10 @@ export type Message = {
   authorId: string;
   body: string;
   createdAt: string;
+  /** Timestamp local, tomado una sola vez cuando este mensaje se construyó a partir del DTO del
+   * servidor (ver mapMessage). Respaldo estable para ordenar si createdAt no se puede parsear —
+   * nunca se recalcula en cada sort/render, así que no salta de posición entre renders. */
+  receivedAt: number;
   type: MessageType;
   imageUri?: string;
 };

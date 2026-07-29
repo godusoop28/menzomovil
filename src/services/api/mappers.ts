@@ -239,6 +239,8 @@ export function mapMessage(dto: MessageDto, myRealId: string | null): Message {
     authorId: dto.authorId === 'system' ? 'system' : alias(dto.authorId, myRealId),
     body: dto.body,
     createdAt: dto.createdAt,
+    // Se captura una sola vez acá, al construir el mensaje — nunca en el comparador de sort.
+    receivedAt: Date.now(),
     type: dto.type,
     imageUri: dto.imageUri ?? undefined,
   };
