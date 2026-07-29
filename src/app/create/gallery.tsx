@@ -36,7 +36,10 @@ export default function CreateGalleryScreen() {
 
   async function pickImage() {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) return;
+    if (!permission.granted) {
+      showToast('Necesitamos acceso a tus fotos para poder adjuntar una imagen.');
+      return;
+    }
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.85 });
     if (result.canceled || !result.assets?.[0]) return;
     setBusy(true);

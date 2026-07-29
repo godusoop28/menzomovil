@@ -78,7 +78,10 @@ export default function EditProfileScreen() {
 
   async function pickAvatar() {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) return;
+    if (!permission.granted) {
+      showToast('Necesitamos acceso a tus fotos para poder cambiarla. Actívalo desde los ajustes del sistema.');
+      return;
+    }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       allowsEditing: true,
@@ -103,7 +106,10 @@ export default function EditProfileScreen() {
 
   async function pickCover() {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) return;
+    if (!permission.granted) {
+      showToast('Necesitamos acceso a tus fotos para poder cambiarla. Actívalo desde los ajustes del sistema.');
+      return;
+    }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       allowsEditing: true,
@@ -128,7 +134,10 @@ export default function EditProfileScreen() {
 
   async function pickBackground() {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) return;
+    if (!permission.granted) {
+      showToast('Necesitamos acceso a tus fotos para poder cambiarla. Actívalo desde los ajustes del sistema.');
+      return;
+    }
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.85 });
     if (result.canceled || !result.assets?.[0]) return;
 

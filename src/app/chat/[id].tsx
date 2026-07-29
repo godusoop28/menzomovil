@@ -15,6 +15,7 @@ import { menzoAssets } from '@/constants/assets';
 import { useAppState } from '@/hooks/useAppState';
 import { useHaptics } from '@/hooks/useHaptics';
 import { useKeyboardBehavior } from '@/hooks/useKeyboardOffset';
+import { useToast } from '@/hooks/useToast';
 import { LOCAL_USER_ID } from '@/store/localUser';
 import { findRoom, findUser, messagesForRoom } from '@/store/selectors';
 import { Colors, Radius, Spacing, Typography, useAccent } from '@/theme';
@@ -24,6 +25,7 @@ export default function ChatDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { state, actions } = useAppState();
   const { light } = useHaptics();
+  const showToast = useToast();
   const accent = useAccent();
   const behavior = useKeyboardBehavior();
   const listRef = useRef<FlatList<Message>>(null);
@@ -31,6 +33,7 @@ export default function ChatDetailScreen() {
   const [pendingImage, setPendingImage] = useState<string | undefined>();
   const [busyCover, setBusyCover] = useState(false);
   const [busyBackground, setBusyBackground] = useState(false);
+  const [sending, setSending] = useState(false);
 
   const room = findRoom(state.social, id);
   const isDirect = room?.type === 'direct';
@@ -65,7 +68,10 @@ export default function ChatDetailScreen() {
 
   async function pickImage() {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) return;
+    if (!permission.granted) {
+      showToast('Necesitamos acceso a tus fotos para poder adjuntar una imagen.');
+      return;
+    }
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8 });
     if (result.canceled || !result.assets?.[0]) return;
     try {
@@ -82,7 +88,10 @@ export default function ChatDetailScreen() {
   async function pickRoomCover() {
     if (!id) return;
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) return;
+    if (!permission.granted) {
+      showToast('Necesitamos acceso a tus fotos para poder adjuntar una imagen.');
+      return;
+    }
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [16, 9], quality: 0.85 });
     if (result.canceled || !result.assets?.[0]) return;
     setBusyCover(true);
@@ -102,7 +111,10 @@ export default function ChatDetailScreen() {
   async function pickRoomBackground() {
     if (!id) return;
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) return;
+    if (!permission.granted) {
+      showToast('Necesitamos acceso a tus fotos para poder adjuntar una imagen.');
+      return;
+    }
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.85 });
     if (result.canceled || !result.assets?.[0]) return;
     setBusyBackground(true);
@@ -119,14 +131,23 @@ export default function ChatDetailScreen() {
     }
   }
 
-  function handleSend() {
+  async function handleSend() {
     const trimmed = draft.trim();
-    if (!trimmed && !pendingImage) return;
+    if ((!trimmed && !pendingImage) || sending) return;
     if (!id) return;
     light();
-    actions.sendMessage(id, trimmed, pendingImage);
+    setSending(true);
+    const imageToSend = pendingImage;
     setDraft('');
     setPendingImage(undefined);
+    const ok = await actions.sendMessage(id, trimmed, imageToSend);
+    setSending(false);
+    if (!ok) {
+      // Devolvemos el borrador para que el usuario no pierda lo que escribió.
+      setDraft(trimmed);
+      setPendingImage(imageToSend);
+      return;
+    }
     requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
   }
 
@@ -235,8 +256,9 @@ export default function ChatDetailScreen() {
             accessibilityRole="button"
             accessibilityLabel="Enviar mensaje"
             onPress={handleSend}
-            style={[styles.sendButton, { backgroundColor: accent.color }]}>
-            <Ionicons name="send" size={18} color={Colors.textOnAccent} />
+            disabled={sending}
+            style={[styles.sendButton, { backgroundColor: accent.color, opacity: sending ? 0.6 : 1 }]}>
+            {sending ? <ActivityIndicator size="small" color={Colors.textOnAccent} /> : <Ionicons name="send" size={18} color={Colors.textOnAccent} />}
           </Pressable>
         </View>
       </KeyboardAvoidingView>

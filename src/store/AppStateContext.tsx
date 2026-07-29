@@ -59,7 +59,7 @@ type AppStateContextValue = {
     addComment: (postId: string, body: string) => void;
     addWallMessage: (profileId: string, body: string) => void;
     toggleFollow: (userId: string) => void;
-    sendMessage: (roomId: string, body: string, imageUri?: string) => void;
+    sendMessage: (roomId: string, body: string, imageUri?: string) => Promise<boolean>;
     openDirectMessage: (userId: string) => Promise<string | null>;
     createRoom: (payload: { name: string; description?: string; topic?: string }) => Promise<string | null>;
     joinRoom: (roomId: string) => Promise<void>;
@@ -401,13 +401,18 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       });
     }
 
-    function sendMessage(roomId: string, body: string, imageUri?: string) {
-      if (!hasSession()) return;
-      (async () => {
+    async function sendMessage(roomId: string, body: string, imageUri?: string): Promise<boolean> {
+      if (!hasSession()) return false;
+      try {
         const uploaded = await ensureUploaded(imageUri);
         const dto = await chatApi.sendMessage(roomId, { body, imageUri: uploaded });
         dispatch({ type: 'SEND_MESSAGE', payload: mapMessage(dto, getMyRealId()) });
-      })().catch((error) => console.warn('[menzo/api] sendMessage failed', error));
+        return true;
+      } catch (error) {
+        console.warn('[menzo/api] sendMessage failed', error);
+        showToast('No pudimos enviar el mensaje. Inténtalo de nuevo.');
+        return false;
+      }
     }
 
     async function createRoom(payload: { name: string; description?: string; topic?: string }): Promise<string | null> {
@@ -469,6 +474,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         dispatch({ type: 'MERGE_SOCIAL', payload: { rooms: [mapChatRoom(dto, getMyRealId())] } });
       } catch (error) {
         console.warn('[menzo/api] updateRoomCover failed', error);
+        showToast('No pudimos actualizar la portada. Inténtalo de nuevo.');
       }
     }
 
@@ -480,6 +486,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         dispatch({ type: 'MERGE_SOCIAL', payload: { rooms: [mapChatRoom(dto, getMyRealId())] } });
       } catch (error) {
         console.warn('[menzo/api] updateRoomBackground failed', error);
+        showToast('No pudimos actualizar el fondo. Inténtalo de nuevo.');
       }
     }
 
