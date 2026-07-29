@@ -15,7 +15,8 @@
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.sega2028.menzomovil",
-      "permissions": ["RECORD_AUDIO", "MODIFY_AUDIO_SETTINGS"]
+      "permissions": ["RECORD_AUDIO", "MODIFY_AUDIO_SETTINGS"],
+      "softwareKeyboardLayoutMode": "resize"
     },
     "ios": {
       "infoPlist": {
