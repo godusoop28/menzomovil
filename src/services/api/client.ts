@@ -127,12 +127,21 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
     const controller = new AbortController();
     const hardTimeout = setTimeout(() => controller.abort(), HARD_TIMEOUT_MS);
     try {
-      return await fetch(`${API_BASE_URL}${path}`, {
+      const response = await fetch(`${API_BASE_URL}${path}`, {
         method,
         headers,
         body: formData ?? (body !== undefined ? JSON.stringify(body) : undefined),
         signal: controller.signal,
       });
+      // Render acepta la conexión en su proxy de entrada apenas el host está despierto, pero la
+      // app puede tardar un poco más en estar lista — durante esa ventana el proxy responde con
+      // una página de error de gateway (no JSON) en vez de esperar. Desde afuera "la API ya
+      // respondía", pero la petición real igual fallaba. Tratarlo como error de red hace que el
+      // mismo reintento de más arriba lo cubra en vez de reventar al parsear el body como JSON.
+      if (response.status === 502 || response.status === 503 || response.status === 504) {
+        throw new Error(`Gateway no listo (${response.status})`);
+      }
+      return response;
     } finally {
       clearTimeout(hardTimeout);
     }
@@ -185,7 +194,17 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
   }
 
   const text = await response.text();
-  const data = text ? JSON.parse(text) : undefined;
+  let data: unknown;
+  try {
+    data = text ? JSON.parse(text) : undefined;
+  } catch {
+    throw new ApiError(
+      response.status,
+      response.ok
+        ? 'Menzo devolvió una respuesta inesperada. Inténtalo de nuevo en un momento.'
+        : `Error ${response.status}`
+    );
+  }
 
   if (!response.ok) {
     const err = data as ErrorResponse | undefined;
