@@ -238,8 +238,23 @@ function SearchTab({ canModerate }: { canModerate: boolean }) {
   const showToast = useToast();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<YoutubeSearchResult[] | null>(null);
+  // Distinto de `results` a propósito: un error de red/YouTube nunca debe verse como "sin
+  // resultados" (results=[]) — antes el catch hacía setResults([]) y la búsqueda fallida se
+  // mostraba idéntica a una búsqueda real sin coincidencias, ocultando el error real.
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
   const [busyVideoId, setBusyVideoId] = useState<string | null>(null);
+
+  function messageForSearchError(error: unknown): string {
+    if (error instanceof ApiError) {
+      if (error.code === 'YOUTUBE_QUOTA_EXCEEDED') return 'Se alcanzó el límite de búsquedas de música por hoy. Intenta más tarde.';
+      if (error.code === 'YOUTUBE_NOT_CONFIGURED' || error.code === 'YOUTUBE_AUTH_ERROR') return 'La búsqueda de música no está disponible en este momento.';
+      if (error.code === 'YOUTUBE_TIMEOUT') return 'YouTube tardó demasiado en responder. Intenta de nuevo.';
+      if (error.code === 'LIVE_NOT_ACTIVE') return 'El LIVE ya no está activo.';
+      return error.message;
+    }
+    return 'No pudimos buscar música en este momento.';
+  }
 
   async function handleSearch() {
     const trimmed = query.trim();
@@ -248,12 +263,12 @@ function SearchTab({ canModerate }: { canModerate: boolean }) {
       return;
     }
     setSearching(true);
+    setSearchError(null);
     try {
       const found = await music.searchSongs(trimmed);
       setResults(found);
     } catch (error) {
-      showToast(error instanceof ApiError ? error.message : 'No pudimos buscar canciones.');
-      setResults([]);
+      setSearchError(messageForSearchError(error));
     } finally {
       setSearching(false);
     }
@@ -299,9 +314,20 @@ function SearchTab({ canModerate }: { canModerate: boolean }) {
           {searching ? <ActivityIndicator size="small" color="#000000" /> : <Ionicons name="search" size={16} color="#000000" />}
         </Pressable>
       </View>
-      {results !== null && !searching && results.length === 0 && <Text style={styles.emptyLabel}>Sin resultados.</Text>}
+      {!searching && searchError && (
+        <View style={styles.searchErrorBox}>
+          <Text style={styles.searchErrorLabel}>{searchError}</Text>
+          <Pressable onPress={handleSearch} style={styles.searchErrorRetry}>
+            <Text style={styles.searchErrorRetryLabel}>Reintentar</Text>
+          </Pressable>
+        </View>
+      )}
+      {!searching && !searchError && results !== null && results.length === 0 && (
+        <Text style={styles.emptyLabel}>No encontramos canciones con esa búsqueda.</Text>
+      )}
       <View style={styles.listGap}>
-        {results?.map((r) => (
+        {!searchError &&
+          results?.map((r) => (
           <View key={r.videoId} style={styles.row}>
             <View style={styles.rowThumbWrap}>
               {r.thumbnailUrl ? (
@@ -568,6 +594,10 @@ const styles = StyleSheet.create({
   tabButtonLabelActive: { color: Colors.textPrimary },
   tabContent: { gap: Spacing.sm },
   emptyLabel: { ...Typography.body, color: Colors.textMuted, textAlign: 'center', paddingVertical: Spacing.lg },
+  searchErrorBox: { alignItems: 'center', gap: Spacing.xs, paddingVertical: Spacing.lg },
+  searchErrorLabel: { ...Typography.body, color: Colors.coral, textAlign: 'center' },
+  searchErrorRetry: { borderRadius: 999, paddingHorizontal: Spacing.md, paddingVertical: 6, backgroundColor: Colors.surfaceSecondary },
+  searchErrorRetryLabel: { ...Typography.caption, fontSize: 12, fontWeight: '600', color: Colors.textPrimary },
   searchRow: { flexDirection: 'row', gap: Spacing.xs },
   searchInput: {
     ...Typography.body,

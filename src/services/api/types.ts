@@ -17,6 +17,9 @@ export type PageResponse<T> = {
 export type ErrorResponse = {
   timestamp: string;
   status: number;
+  /** Código estable para distinguir la causa sin parsear el mensaje humano — p. ej.
+   * "YOUTUBE_QUOTA_EXCEEDED", "LIVE_NOT_ACTIVE". null en errores genéricos que no lo necesitan. */
+  code: string | null;
   error: string;
   message: string;
   path: string;

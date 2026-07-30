@@ -5,11 +5,15 @@ import type { AuthResponseDto, ErrorResponse } from './types';
 export class ApiError extends Error {
   status: number;
   fieldErrors: Record<string, string> | null;
+  /** Código estable del backend (p. ej. "YOUTUBE_QUOTA_EXCEEDED") — null si no vino uno o si la
+   * falla fue de red/timeout local (nunca llegó a golpear al backend). */
+  code: string | null;
 
-  constructor(status: number, message: string, fieldErrors: Record<string, string> | null = null) {
+  constructor(status: number, message: string, fieldErrors: Record<string, string> | null = null, code: string | null = null) {
     super(message);
     this.status = status;
     this.fieldErrors = fieldErrors;
+    this.code = code;
   }
 }
 
@@ -208,7 +212,7 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
 
   if (!response.ok) {
     const err = data as ErrorResponse | undefined;
-    throw new ApiError(response.status, err?.message ?? `Error ${response.status}`, err?.fieldErrors ?? null);
+    throw new ApiError(response.status, err?.message ?? `Error ${response.status}`, err?.fieldErrors ?? null, err?.code ?? null);
   }
 
   return data as T;
