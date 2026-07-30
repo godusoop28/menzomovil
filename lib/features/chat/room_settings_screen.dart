@@ -1,6 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../core/providers/repository_providers.dart';
 import '../../core/theme/app_colors.dart';
@@ -33,7 +36,13 @@ class _RoomSettingsScreenState extends ConsumerState<RoomSettingsScreen> {
   );
   bool _saving = false;
 
+  String? _pendingAvatarPath;
+  String? _pendingCoverPath;
+  String? _pendingBackgroundPath;
+
   bool get _isOwner => widget.room.role == RoomRole.owner;
+  bool get _canModerate =>
+      widget.room.role == RoomRole.owner || widget.room.role == RoomRole.coHost;
 
   @override
   void dispose() {
@@ -42,15 +51,43 @@ class _RoomSettingsScreenState extends ConsumerState<RoomSettingsScreen> {
     super.dispose();
   }
 
+  Future<void> _pickImage(void Function(String path) onPicked) async {
+    final image = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 85,
+    );
+    if (image != null) setState(() => onPicked(image.path));
+  }
+
   Future<void> _saveInfo() async {
     setState(() => _saving = true);
     try {
-      await ref.read(chatRepositoryProvider).updateRoom(widget.room.id, {
+      final uploads = ref.read(uploadsRepositoryProvider);
+      final patch = <String, dynamic>{
         'name': _nameController.text.trim(),
         'description': _descriptionController.text.trim(),
-      });
+      };
+      if (_pendingAvatarPath != null) {
+        patch['avatarUri'] = await uploads.ensureUploaded(_pendingAvatarPath);
+      }
+      if (_pendingCoverPath != null) {
+        patch['coverUri'] = await uploads.ensureUploaded(_pendingCoverPath);
+      }
+      if (_pendingBackgroundPath != null) {
+        patch['backgroundUri'] = await uploads.ensureUploaded(
+          _pendingBackgroundPath,
+        );
+      }
+      await ref.read(chatRepositoryProvider).updateRoom(widget.room.id, patch);
       ref.invalidate(roomProvider(widget.room.id));
-      if (mounted) showMenzoToast(context, 'Sala actualizada.');
+      if (mounted) {
+        setState(() {
+          _pendingAvatarPath = null;
+          _pendingCoverPath = null;
+          _pendingBackgroundPath = null;
+        });
+        showMenzoToast(context, 'Sala actualizada.');
+      }
     } catch (_) {
       if (mounted) showMenzoToast(context, 'No pudimos guardar los cambios.');
     } finally {
@@ -103,7 +140,49 @@ class _RoomSettingsScreenState extends ConsumerState<RoomSettingsScreen> {
             maxLines: 3,
             decoration: const InputDecoration(hintText: 'Descripción'),
           ),
-          const SizedBox(height: 12),
+          if (_canModerate) ...[
+            const SizedBox(height: 24),
+            Text('Apariencia', style: AppTextStyles.caption()),
+            const SizedBox(height: 10),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _ImagePickerTile(
+                  label: 'Avatar',
+                  circular: true,
+                  size: 84,
+                  imagePath: _pendingAvatarPath,
+                  imageUrl: widget.room.avatarUri,
+                  fallback: widget.room.name ?? '',
+                  onTap: () => _pickImage((p) => _pendingAvatarPath = p),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: _ImagePickerTile(
+                    label: 'Portada',
+                    description: 'Aparece en la sala y en el LIVE',
+                    size: 84,
+                    imagePath: _pendingCoverPath,
+                    imageUrl: widget.room.coverUri,
+                    fallback: widget.room.name ?? '',
+                    onTap: () => _pickImage((p) => _pendingCoverPath = p),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            _ImagePickerTile(
+              label: 'Fondo del chat',
+              description: 'Se muestra detrás de los mensajes',
+              size: 100,
+              wide: true,
+              imagePath: _pendingBackgroundPath,
+              imageUrl: widget.room.backgroundUri,
+              fallback: widget.room.name ?? '',
+              onTap: () => _pickImage((p) => _pendingBackgroundPath = p),
+            ),
+          ],
+          const SizedBox(height: 16),
           GradientButton(
             label: 'Guardar',
             loading: _saving,
@@ -148,6 +227,97 @@ class _RoomSettingsScreenState extends ConsumerState<RoomSettingsScreen> {
           ],
         ],
       ),
+    );
+  }
+}
+
+/// Selector de imagen reutilizable para avatar/portada/fondo de la sala — 1:1 con
+/// `ImagePickerRow` de menzoweb/components/room/RoomSettingsPanel.tsx (`AppearanceSection`).
+class _ImagePickerTile extends StatelessWidget {
+  const _ImagePickerTile({
+    required this.label,
+    required this.imagePath,
+    required this.imageUrl,
+    required this.fallback,
+    required this.onTap,
+    this.description,
+    this.size = 84,
+    this.circular = false,
+    this.wide = false,
+  });
+
+  final String label;
+  final String? description;
+  final String? imagePath;
+  final String? imageUrl;
+  final String fallback;
+  final VoidCallback onTap;
+  final double size;
+  final bool circular;
+  final bool wide;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget image;
+    if (imagePath != null) {
+      image = Image.file(File(imagePath!), fit: BoxFit.cover);
+    } else if (imageUrl != null && imageUrl!.isNotEmpty) {
+      image = Image.network(imageUrl!, fit: BoxFit.cover);
+    } else {
+      image = Container(
+        color: AppColors.surfaceSecondary,
+        alignment: Alignment.center,
+        child: Icon(
+          circular ? Icons.groups_outlined : Icons.image_outlined,
+          color: AppColors.textMuted,
+        ),
+      );
+    }
+
+    final preview = ClipRRect(
+      borderRadius: BorderRadius.circular(circular ? size / 2 : AppRadius.md),
+      child: SizedBox(
+        width: wide ? double.infinity : size,
+        height: size,
+        child: image,
+      ),
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: AppTextStyles.label()),
+        if (description != null) ...[
+          const SizedBox(height: 2),
+          Text(description!, style: AppTextStyles.caption()),
+        ],
+        const SizedBox(height: 8),
+        GestureDetector(
+          onTap: onTap,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              preview,
+              Container(
+                width: wide ? double.infinity : size,
+                height: size,
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.25),
+                  borderRadius: BorderRadius.circular(
+                    circular ? size / 2 : AppRadius.md,
+                  ),
+                ),
+                alignment: Alignment.center,
+                child: const Icon(
+                  Icons.camera_alt_outlined,
+                  color: Colors.white,
+                  size: 20,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

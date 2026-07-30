@@ -199,7 +199,11 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen> {
     final localId = 'local-${_localIdSeq++}';
     setState(
       () => _pending.add(
-        _PendingMessage(localId: localId, body: text, status: _SendStatus.sending),
+        _PendingMessage(
+          localId: localId,
+          body: text,
+          status: _SendStatus.sending,
+        ),
       ),
     );
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
@@ -377,122 +381,144 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen> {
           ),
         ],
       ),
-      body: Column(
+      body: Stack(
         children: [
-          Expanded(
-            child: messagesAsync.when(
-              data: (page) {
-                final all = _mergeMessages(page.items);
-                if (all.isEmpty && _pending.isEmpty) {
-                  return const Center(
-                    child: MenziIllustrationState(
-                      image: MenziIllustration.chat,
-                      title: 'Aún no hay mensajes aquí',
-                      description: 'Sé el primero en escribir algo.',
-                      size: MenziIllustrationSize.small,
-                    ),
-                  );
-                }
-                final timeline = _buildTimeline(all, myId)
-                  ..addAll(
-                    _pending.map(
-                      (p) => _PendingMessageBubble(
-                        pending: p,
-                        onRetry: () => _retry(p.localId),
-                        onDiscard: () => _discardFailed(p.localId),
-                      ),
-                    ),
-                  );
-                return ListView.builder(
-                  controller: _scrollController,
-                  padding: const EdgeInsets.all(16),
-                  itemCount: timeline.length,
-                  itemBuilder: (context, i) => timeline[i],
-                );
-              },
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, st) => Center(
-                child: Text(
-                  'No pudimos cargar los mensajes.',
-                  style: AppTextStyles.body(color: AppColors.coral),
-                ),
+          if (roomAsync.value?.backgroundUri != null &&
+              roomAsync.value!.backgroundUri!.isNotEmpty) ...[
+            Positioned.fill(
+              child: Image.network(
+                roomAsync.value!.backgroundUri!,
+                fit: BoxFit.cover,
               ),
             ),
-          ),
-          if (live.connected && live.activeRoomId == widget.roomId)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              child: GestureDetector(
-                onTap: () =>
-                    roomAsync.maybeWhen(data: _openLivePanel, orElse: () {}),
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.podcasts,
-                      size: 14,
-                      color: AppColors.coral,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      'Estás en el LIVE de esta sala · Toca para volver',
-                      style: AppTextStyles.caption(color: AppColors.coral),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          if (_typingUsers.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  _typingUsers.length == 1
-                      ? '${_typingUsers.values.first} está escribiendo…'
-                      : '${_typingUsers.length} personas están escribiendo…',
-                  style: AppTextStyles.caption(color: AppColors.textMuted),
-                ),
-              ),
-            ),
-          SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _draftController,
-                      style: AppTextStyles.body(),
-                      minLines: 1,
-                      maxLines: 4,
-                      decoration: InputDecoration(
-                        hintText: 'Escribe un mensaje…',
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 10,
+            const Positioned.fill(child: ColoredBox(color: Color(0x9E07090D))),
+          ],
+          Column(
+            children: [
+              Expanded(
+                child: messagesAsync.when(
+                  data: (page) {
+                    final all = _mergeMessages(page.items);
+                    if (all.isEmpty && _pending.isEmpty) {
+                      return const Center(
+                        child: MenziIllustrationState(
+                          image: MenziIllustration.chat,
+                          title: 'Aún no hay mensajes aquí',
+                          description: 'Sé el primero en escribir algo.',
+                          size: MenziIllustrationSize.small,
                         ),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(AppRadius.pill),
-                          borderSide: BorderSide.none,
+                      );
+                    }
+                    final timeline = _buildTimeline(all, myId)
+                      ..addAll(
+                        _pending.map(
+                          (p) => _PendingMessageBubble(
+                            pending: p,
+                            onRetry: () => _retry(p.localId),
+                            onDiscard: () => _discardFailed(p.localId),
+                          ),
                         ),
-                      ),
-                      onChanged: (_) => _notifyTyping(),
-                      onSubmitted: (_) => _send(),
+                      );
+                    return ListView.builder(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.all(16),
+                      itemCount: timeline.length,
+                      itemBuilder: (context, i) => timeline[i],
+                    );
+                  },
+                  loading: () =>
+                      const Center(child: CircularProgressIndicator()),
+                  error: (e, st) => Center(
+                    child: Text(
+                      'No pudimos cargar los mensajes.',
+                      style: AppTextStyles.body(color: AppColors.coral),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  IconButton(
-                    onPressed: _send,
-                    icon: const Icon(Icons.send),
-                    style: IconButton.styleFrom(
-                      backgroundColor: AppColors.orange,
-                      foregroundColor: Colors.black,
+                ),
+              ),
+              if (live.connected && live.activeRoomId == widget.roomId)
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 4,
+                  ),
+                  child: GestureDetector(
+                    onTap: () => roomAsync.maybeWhen(
+                      data: _openLivePanel,
+                      orElse: () {},
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.podcasts,
+                          size: 14,
+                          color: AppColors.coral,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Estás en el LIVE de esta sala · Toca para volver',
+                          style: AppTextStyles.caption(color: AppColors.coral),
+                        ),
+                      ],
                     ),
                   ),
-                ],
+                ),
+              if (_typingUsers.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      _typingUsers.length == 1
+                          ? '${_typingUsers.values.first} está escribiendo…'
+                          : '${_typingUsers.length} personas están escribiendo…',
+                      style: AppTextStyles.caption(color: AppColors.textMuted),
+                    ),
+                  ),
+                ),
+              SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _draftController,
+                          style: AppTextStyles.body(),
+                          minLines: 1,
+                          maxLines: 4,
+                          decoration: InputDecoration(
+                            hintText: 'Escribe un mensaje…',
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 10,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(
+                                AppRadius.pill,
+                              ),
+                              borderSide: BorderSide.none,
+                            ),
+                          ),
+                          onChanged: (_) => _notifyTyping(),
+                          onSubmitted: (_) => _send(),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        onPressed: _send,
+                        icon: const Icon(Icons.send),
+                        style: IconButton.styleFrom(
+                          backgroundColor: AppColors.orange,
+                          foregroundColor: Colors.black,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
         ],
       ),
