@@ -92,9 +92,17 @@ class MenziDjNotifier extends Notifier<MenziDjState>
   void Function(double seconds)? _pendingTimeRequest;
 
   /// true mientras el audio lo está reproduciendo el WebView nativo en segundo plano
-  /// (`MenziDjBackgroundPlayerService`) en vez del WebView de Flutter — ver
+  /// (`MenziDjBackgroundPlayer`, Android) en vez del WebView de Flutter — ver
   /// `_handleAppBackgrounded`/`_handleAppForegrounded`.
   bool _isBackgrounded = false;
+
+  /// Se incrementa en cada transición de lifecycle — si el usuario alterna primer/segundo
+  /// plano muy rápido (más rápido de lo que tarda `activate()` en resolver, que incluye un
+  /// round-trip al MethodChannel), sin esto el resultado de un `_handleAppBackgrounded()` ya
+  /// obsoleto podía aplicarse DESPUÉS de que `_handleAppForegrounded()` ya había vuelto a
+  /// primer plano, pausando el WebView de Flutter por error mientras el usuario ya estaba
+  /// mirando la app de nuevo.
+  int _lifecycleGeneration = 0;
 
   /// Último `YT.PlayerState` reportado por el bridge (ver [YtPlayerState]). Mientras el player
   /// está en `buffering`, su posición real queda momentáneamente congelada por una razón
@@ -178,13 +186,14 @@ class MenziDjNotifier extends Notifier<MenziDjState>
     }
   }
 
-  /// Le pasa la posta del audio al reproductor nativo en segundo plano (ver
-  /// `MenziDjBackgroundPlayerService`) y pausa el WebView de Flutter — si no lo pausáramos,
-  /// sonarían los dos reproductores a la vez. Si no hay permiso de overlay (o cualquier otra
-  /// falla), `enterBackground` devuelve `false` y no se toca nada: el WebView de Flutter sigue
-  /// como estaba, tal cual se comportaba antes de esta mejora (puede pausarse solo al
-  /// minimizar del todo, según el WebView/OEM).
+  /// Le pasa la posta del audio al reproductor nativo en segundo plano (ya precalentado por
+  /// [_setup] — ver `MenziDjBackgroundPlayer.kt`) y pausa el WebView de Flutter — si no lo
+  /// pausáramos, sonarían los dos reproductores a la vez. Si no hay permiso de overlay (o
+  /// cualquier otra falla), `activate` devuelve `false` y no se toca nada: el WebView de
+  /// Flutter sigue como estaba, tal cual se comportaba antes de esta mejora (puede pausarse
+  /// solo al minimizar del todo, según el WebView/OEM).
   Future<void> _handleAppBackgrounded() async {
+    final generation = ++_lifecycleGeneration;
     final session = state.session;
     if (session == null ||
         session.currentVideoId == null ||
@@ -194,14 +203,17 @@ class MenziDjNotifier extends Notifier<MenziDjState>
     final snapshotAt = _sessionSnapshotAt ?? DateTime.now();
     final elapsed = DateTime.now().difference(snapshotAt).inMilliseconds / 1000;
     final expectedPosition = session.positionSeconds + elapsed;
-    final handedOff = await MenziDjBackgroundChannel.enterBackground(
-      videoId: session.currentVideoId!,
+    final handedOff = await MenziDjBackgroundChannel.activate(
       origin: AppConfig.menziDjOrigin,
+      videoId: session.currentVideoId!,
       positionSeconds: expectedPosition,
       playing: true,
       muted: state.localMuted,
       volume: state.localVolume,
     );
+    // Si mientras tanto ya volvimos a primer plano (u otro ciclo empezó), esta respuesta llegó
+    // tarde — no pisar el estado actual pausando algo que el usuario ya está mirando.
+    if (generation != _lifecycleGeneration) return;
     if (handedOff) {
       _isBackgrounded = true;
       _sendCommand('pause');
@@ -210,11 +222,14 @@ class MenziDjNotifier extends Notifier<MenziDjState>
 
   /// Recupera la posición real alcanzada en segundo plano y hace que el WebView de Flutter
   /// retome ahí — sin esto, al volver el video arrancaría de nuevo desde donde quedó pausado
-  /// (minutos atrás), audiblemente desincronizado del resto de la sala.
+  /// (minutos atrás), audiblemente desincronizado del resto de la sala. El reproductor de
+  /// fondo NO se destruye acá (solo se pausa+mutea) — queda precalentado para la próxima vez
+  /// que se minimice en esta misma sesión de LIVE/Menzi DJ.
   Future<void> _handleAppForegrounded() async {
+    ++_lifecycleGeneration;
     if (!_isBackgrounded) return;
     _isBackgrounded = false;
-    final position = await MenziDjBackgroundChannel.exitBackground();
+    final position = await MenziDjBackgroundChannel.pauseAndReportPosition();
     _sessionSnapshotAt = DateTime.now();
     _sendCommand('seek', {'seconds': position});
     if (state.session?.status == MusicSessionStatus.playing) {
@@ -229,6 +244,11 @@ class MenziDjNotifier extends Notifier<MenziDjState>
 
   void _setup(String roomId) {
     refresh();
+    // Precalienta el reproductor de fondo ya mismo (con la app todavía en primer plano) —
+    // montar la ventana overlay + cargar el IFrame API de YouTube implica un pedido de red que
+    // NO queremos pagar recién en el instante de minimizar (ver comentario de clase en
+    // MenziDjBackgroundPlayer.kt). Sin permiso de overlay esto simplemente no hace nada.
+    MenziDjBackgroundChannel.warmUp(origin: AppConfig.menziDjOrigin);
     final channel = StompChannel();
     _channel = channel;
     channel.connect(
@@ -266,6 +286,11 @@ class MenziDjNotifier extends Notifier<MenziDjState>
     _lastAppliedStatus = null;
     _sessionSnapshotAt = null;
     _localPlayerState = null;
+    _isBackgrounded = false;
+    // Recién acá se destruye de verdad el reproductor de fondo — dejarlo precalentado durante
+    // toda la sesión (ver [_setup]) solo tiene sentido mientras siga habiendo un LIVE/Menzi DJ
+    // activo al que volver.
+    MenziDjBackgroundChannel.teardown();
   }
 
   void _sendCommand(String cmd, [Map<String, dynamic>? args]) {

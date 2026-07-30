@@ -104,26 +104,42 @@ class MainActivity : FlutterActivity() {
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, menziDjBackgroundChannelName).setMethodCallHandler { call, result ->
             when (call.method) {
-                "enterBackground" -> {
+                "warmUp" -> {
+                    // Se llama apenas hay una canción activa, con la app en primer plano —
+                    // deja lista la ventana/reproductor de fondo (montaje + carga del IFrame
+                    // API de YouTube, que implica un pedido de red) ANTES de que haga falta,
+                    // para que activate() sea instantáneo al minimizar de verdad.
+                    if (!canDrawOverlays()) {
+                        result.success(false)
+                    } else {
+                        result.success(
+                            MenziDjBackgroundPlayer.warmUp(
+                                context = applicationContext,
+                                origin = call.argument<String>("origin") ?: "https://menzoweb.vercel.app",
+                            ),
+                        )
+                    }
+                }
+                "activate" -> {
                     if (!canDrawOverlays()) {
                         // Sin overlay no hay dónde montar el WebView nativo — Dart no debe
                         // pausar su propio WebView, la música sigue por el camino de siempre.
                         result.success(false)
                     } else {
                         // Llamada síncrona (no Intent/Service) — el resultado que le llega a
-                        // Dart es el resultado REAL de intentar montar la ventana overlay, no
-                        // una suposición optimista. Ver el comentario de clase en
+                        // Dart es el resultado REAL de intentar montar/activar la ventana
+                        // overlay, no una suposición optimista. Ver el comentario de clase en
                         // MenziDjBackgroundPlayer.kt sobre por qué esto importa.
-                        val attached = MenziDjBackgroundPlayer.enter(
+                        val activated = MenziDjBackgroundPlayer.activate(
                             context = applicationContext,
-                            videoId = call.argument<String>("videoId") ?: "",
                             origin = call.argument<String>("origin") ?: "https://menzoweb.vercel.app",
+                            videoId = call.argument<String>("videoId") ?: "",
                             positionSeconds = call.argument<Double>("positionSeconds") ?: 0.0,
                             playing = call.argument<Boolean>("playing") ?: true,
                             muted = call.argument<Boolean>("muted") ?: false,
                             volume = call.argument<Int>("volume") ?: 80,
                         )
-                        result.success(attached)
+                        result.success(activated)
                     }
                 }
                 "updateTrack" -> {
@@ -140,10 +156,14 @@ class MainActivity : FlutterActivity() {
                     )
                     result.success(null)
                 }
-                "exitBackground" -> {
-                    MenziDjBackgroundPlayer.exit { position ->
+                "pauseAndReportPosition" -> {
+                    MenziDjBackgroundPlayer.pauseAndReportPosition { position ->
                         result.success(mapOf("positionSeconds" to position))
                     }
+                }
+                "teardown" -> {
+                    MenziDjBackgroundPlayer.teardown()
+                    result.success(null)
                 }
                 else -> result.notImplemented()
             }

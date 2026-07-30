@@ -21,14 +21,21 @@ import org.json.JSONObject
  * Es un objeto Kotlin plano (no un `Service` de Android) — el proceso ya se mantiene vivo por
  * `BackgroundAudioService` (que sí es un foreground service real) mientras haya un LIVE o
  * música activos, así que no hace falta un segundo Service compitiendo por lo mismo. La ventaja
- * concreta de NO ser un Service: `enter()`/`exit()` corren de forma síncrona en el mismo hilo
- * que llama desde `MainActivity`, así que el resultado que se le devuelve a Dart es el
- * resultado REAL de intentar montar la ventana — antes, con `startService(Intent)` +
- * `result.success(true)` inmediato, Dart podía creer que el hand-off funcionó (y pausar su
- * propio WebView) aunque `addView` fallara en el service de fondo (permiso revocado justo en
- * el medio, fallo del WindowManager, lo que sea) — eso dejaba a la música directamente muda:
- * ni el reproductor de primer plano (pausado por las dudas) ni el de fondo (que nunca llegó a
- * existir) sonaban.
+ * concreta de NO ser un Service: las llamadas corren de forma síncrona en el mismo hilo que
+ * llama desde `MainActivity`, así que el resultado que se le devuelve a Dart es el resultado
+ * REAL de intentar montar la ventana — antes, con `startService(Intent)` + `result.success(true)`
+ * inmediato, Dart podía creer que el hand-off funcionó (y pausar su propio WebView) aunque
+ * `addView` fallara en el service de fondo, dejando a la música directamente muda.
+ *
+ * PRECALENTADO: montar la ventana + cargar el IFrame API de YouTube implica un pedido de red
+ * (`<script src="https://www.youtube.com/iframe_api">`) que puede tardar unos segundos — hacer
+ * todo eso recién en el instante exacto de minimizar la app dejaba un hueco audible de silencio
+ * real antes de que el reproductor de fondo llegara a arrancar (el de primer plano ya se había
+ * pausado). Por eso [warmUp] se llama apenas Menzi DJ tiene una canción activa (con la app
+ * todavía en primer plano) y el WebView de fondo queda montado, muteado y en pausa durante TODA
+ * la sesión — [activate]/[pause] solo alternan play/pause+mute sobre una instancia que ya está
+ * lista, sin ningún pedido de red de por medio. Recién se destruye con [teardown], al salir del
+ * LIVE/de Menzi DJ.
  */
 object MenziDjBackgroundPlayer {
     private const val TAG = "MenziDjBackgroundPlayer"
@@ -38,16 +45,28 @@ object MenziDjBackgroundPlayer {
     private var ready = false
     private var applyOnReady: (() -> Unit)? = null
 
+    /** Deja lista la ventana/reproductor de fondo (muteado y sin reproducir nada todavía) para
+     * que, llegado el momento real de pasar a segundo plano, [activate] sea instantáneo — no
+     * hay pedido de red pendiente en ese momento. Seguro de llamar varias veces (no-op si ya
+     * está montado). */
+    @SuppressLint("SetJavaScriptEnabled")
+    fun warmUp(context: Context, origin: String): Boolean {
+        if (webView != null) return true
+        return tryAttach(context, origin)
+    }
+
     /** true si el WebView de fondo está montado de verdad — Dart solo debe pausar su propio
-     * WebView cuando esto es true; si es false, no hay quién reproduzca nada. */
+     * WebView cuando esto (o el resultado de `activate`) es true; si es false, no hay quién
+     * reproduzca nada. */
     val isActive: Boolean
         get() = webView != null
 
-    @SuppressLint("SetJavaScriptEnabled")
-    fun enter(
+    /** Pasa a primer plano el audio en el reproductor de fondo (ya precalentado por [warmUp] —
+     * si por algún motivo no lo estaba, lo intenta acá mismo como red de seguridad). */
+    fun activate(
         context: Context,
-        videoId: String,
         origin: String,
+        videoId: String,
         positionSeconds: Double,
         playing: Boolean,
         muted: Boolean,
@@ -79,8 +98,10 @@ object MenziDjBackgroundPlayer {
         if (muted) sendCommand("mute", null) else sendCommand("unmute", mapOf("volume" to volume))
     }
 
-    /** Pide la posición real alcanzada y desmonta el WebView de fondo. */
-    fun exit(callback: (Double) -> Unit) {
+    /** Pide la posición real alcanzada y PAUSA+MUTEA el reproductor de fondo — pero no lo
+     * destruye, queda precalentado para la próxima vez que se minimice la app en esta misma
+     * sesión de LIVE/Menzi DJ. */
+    fun pauseAndReportPosition(callback: (Double) -> Unit) {
         val view = webView
         if (view == null) {
             callback(0.0)
@@ -90,9 +111,26 @@ object MenziDjBackgroundPlayer {
             "(function(){ try { return player ? player.getCurrentTime() : 0; } catch(e) { return 0; } })()",
         ) { result ->
             val value = result?.toDoubleOrNull() ?: 0.0
-            teardown()
+            sendCommand("pause", null)
+            sendCommand("mute", null)
             callback(value)
         }
+    }
+
+    /** Destruye de verdad la ventana/WebView de fondo — solo al salir del LIVE o terminar la
+     * sesión de Menzi DJ, no en cada ida y vuelta de primer/segundo plano. */
+    fun teardown() {
+        val view = webView
+        if (view != null) {
+            try {
+                windowManager?.removeView(view)
+            } catch (_: Exception) {}
+            view.destroy()
+        }
+        webView = null
+        windowManager = null
+        ready = false
+        applyOnReady = null
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -163,20 +201,6 @@ object MenziDjBackgroundPlayer {
         webView?.post {
             webView?.evaluateJavascript("window.handleMenziCommand($json)", null)
         }
-    }
-
-    private fun teardown() {
-        val view = webView
-        if (view != null) {
-            try {
-                windowManager?.removeView(view)
-            } catch (_: Exception) {}
-            view.destroy()
-        }
-        webView = null
-        windowManager = null
-        ready = false
-        applyOnReady = null
     }
 
     /** Página mínima con el IFrame Player oficial de YouTube — mismo bridge de comandos que
