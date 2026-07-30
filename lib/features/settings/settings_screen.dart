@@ -91,7 +91,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           Text('LIVE', style: AppTextStyles.caption()),
           const SizedBox(height: 8),
           _SwitchTile(
-            label: 'Burbuja flotante durante LIVE',
+            label: 'Mantener audio y burbuja del LIVE al minimizar',
             value: _bubbleEnabled,
             onChanged: _toggleBubble,
           ),

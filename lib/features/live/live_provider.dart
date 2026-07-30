@@ -27,6 +27,7 @@ class LiveState {
     this.localAudioPublished = false,
     this.lastMicrophoneError,
     this.microphonePermissionDenied = false,
+    this.reconnecting = false,
     this.participants = const [],
     this.speakingLevels = const {},
     this.speakingRequests = const [],
@@ -44,6 +45,7 @@ class LiveState {
   final bool localAudioPublished;
   final String? lastMicrophoneError;
   final bool microphonePermissionDenied;
+  final bool reconnecting;
   final List<LiveParticipant> participants;
   final Map<String, double> speakingLevels;
   final List<LiveParticipant> speakingRequests;
@@ -72,6 +74,7 @@ class LiveState {
     String? lastMicrophoneError,
     bool clearLastMicrophoneError = false,
     bool? microphonePermissionDenied,
+    bool? reconnecting,
     List<LiveParticipant>? participants,
     Map<String, double>? speakingLevels,
     List<LiveParticipant>? speakingRequests,
@@ -97,6 +100,7 @@ class LiveState {
         : (lastMicrophoneError ?? this.lastMicrophoneError),
     microphonePermissionDenied:
         microphonePermissionDenied ?? this.microphonePermissionDenied,
+    reconnecting: reconnecting ?? this.reconnecting,
     participants: participants ?? this.participants,
     speakingLevels: speakingLevels ?? this.speakingLevels,
     speakingRequests: speakingRequests ?? this.speakingRequests,
@@ -170,6 +174,40 @@ class LiveNotifier extends Notifier<LiveState> {
                 }
                 state = state.copyWith(speakingLevels: levels);
               },
+          // Red de seguridad: si Agora reporta que la captura/codificación de audio falló de
+          // verdad (no solo un mute nuestro, que no pasa por acá), el estado local
+          // (`localAudioPublished`) se corrige solo en vez de quedar mintiendo que el
+          // micrófono sigue publicado cuando en los hechos dejó de estarlo.
+          onLocalAudioStateChanged: (connection, audioState, reason) {
+            if (audioState ==
+                LocalAudioStreamState.localAudioStreamStateFailed) {
+              state = state.copyWith(
+                localAudioPublished: false,
+                lastMicrophoneError:
+                    'Se perdió la conexión con tu micrófono. Volvé a intentarlo.',
+              );
+            }
+          },
+          // El SDK de Agora ya reintenta reconectar solo ante cortes de red (hasta 20 min) —
+          // acá solo reflejamos ese estado en la UI, para que "sin audio unos segundos" se vea
+          // como "reconectando" en vez de parecer que el LIVE se rompió sin explicación.
+          onConnectionStateChanged: (connection, connState, reason) {
+            if (connState == ConnectionStateType.connectionStateReconnecting) {
+              state = state.copyWith(reconnecting: true);
+            } else if (connState ==
+                ConnectionStateType.connectionStateConnected) {
+              state = state.copyWith(
+                reconnecting: false,
+                clearLastMicrophoneError: true,
+              );
+            } else if (connState == ConnectionStateType.connectionStateFailed) {
+              state = state.copyWith(
+                reconnecting: false,
+                lastMicrophoneError:
+                    'Se perdió la conexión de voz. Salí y volvé a entrar al LIVE.',
+              );
+            }
+          },
         ),
       );
       await engine.enableAudioVolumeIndication(
@@ -262,6 +300,13 @@ class LiveNotifier extends Notifier<LiveState> {
   Future<void> _publishMic() async {
     final engine = _engine;
     if (engine == null) return;
+    // Mientras esto está en vuelo, el botón de mutear debe quedar deshabilitado (igual que
+    // durante un `toggleMute()`) — sin este flag, un tap del usuario justo durante la
+    // publicación inicial (por ejemplo, apenas creado el LIVE) entraba en carrera con esta
+    // misma función: `toggleMute()` veía `localAudioPublished` todavía en `false` y llamaba
+    // a `_publishMic()` por segunda vez en paralelo, que siempre termina dejando `muted: true`
+    // — así el toggle del usuario quedaba pisado sin que la UI reflejara jamás lo que tocó.
+    state = state.copyWith(microphoneChanging: true);
     try {
       await engine.enableLocalAudio(true);
       await engine.updateChannelMediaOptions(
@@ -279,6 +324,8 @@ class LiveNotifier extends Notifier<LiveState> {
         lastMicrophoneError:
             'No pudimos acceder a tu micrófono. Revisa los permisos.',
       );
+    } finally {
+      state = state.copyWith(microphoneChanging: false);
     }
   }
 
@@ -349,17 +396,24 @@ class LiveNotifier extends Notifier<LiveState> {
         return;
       }
       final next = !state.muted;
-      await engine.muteLocalAudioStream(next);
+      // Optimista: el ícono cambia al instante, no cuando Agora confirma — con "Discord-level"
+      // de responsividad no alcanza con esperar el round-trip nativo antes de pintar el
+      // cambio. Si `muteLocalAudioStream` falla, se revierte abajo.
       state = state.copyWith(muted: next);
+      try {
+        await engine.muteLocalAudioStream(next);
+      } catch (e) {
+        state = state.copyWith(
+          muted: !next,
+          lastMicrophoneError:
+              'No pudimos cambiar el micrófono. Intenta de nuevo.',
+        );
+        return;
+      }
       ref
           .read(liveRepositoryProvider)
           .setMicrophone(roomId, !next)
           .catchError((_) {});
-    } catch (_) {
-      state = state.copyWith(
-        lastMicrophoneError:
-            'No pudimos cambiar el micrófono. Intenta de nuevo.',
-      );
     } finally {
       state = state.copyWith(microphoneChanging: false);
     }

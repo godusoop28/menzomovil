@@ -146,6 +146,34 @@ class _LiveRoomPanelState extends ConsumerState<LiveRoomPanel> {
           : Column(
               children: [
                 const _BubbleOptInPrompt(),
+                if (live.reconnecting)
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.cyan.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(AppRadius.md),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                        const SizedBox(width: 10),
+                        Text(
+                          'Reconectando el audio del LIVE…',
+                          style: AppTextStyles.caption(color: AppColors.cyan),
+                        ),
+                      ],
+                    ),
+                  ),
                 if (announcement != null && announcement.trim().isNotEmpty)
                   Container(
                     width: double.infinity,
@@ -238,9 +266,9 @@ class _BubbleOptInPromptState extends State<_BubbleOptInPrompt> {
     if (!mounted) return;
     final accepted = await showConfirmDialog(
       context,
-      title: 'Burbuja flotante',
+      title: 'Mantené el LIVE activo al minimizar',
       description:
-          'Permite que Menzo muestre una burbuja durante los LIVE para regresar rápidamente a la llamada.',
+          'Menzo necesita este permiso para que tu voz y Menzi DJ sigan sonando cuando minimizás la app o usás otra — además vas a ver una burbuja para volver rápido a la llamada. Sin esto, el audio puede cortarse al salir de Menzo.',
       confirmLabel: 'Permitir',
       cancelLabel: 'Ahora no',
     );
