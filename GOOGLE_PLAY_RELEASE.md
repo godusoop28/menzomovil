@@ -1,5 +1,12 @@
 # MENZO — Guía de publicación en Google Play
 
+> ⚠️ **Histórico de la era Expo/EAS.** El proyecto se migró a Flutter — ya no hay `eas.json`,
+> `app.json` ni `eas build`. La build de Android/iOS ahora es directamente con Gradle/Xcode
+> (`flutter build appbundle`, `flutter build ipa`). Se conserva este documento solo por el
+> **package name definitivo** (`com.sega2028.menzomovil`, ya configurado igual en el proyecto
+> Flutter) y el contexto de la cuenta de Google Play — el resto (EAS, `eas.json`, scripts npm)
+> ya no aplica.
+
 ## Identidad de la app (no cambiar después de la primera subida)
 
 | Campo | Valor |

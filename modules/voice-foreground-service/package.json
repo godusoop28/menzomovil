@@ -1,7 +1,0 @@
-{
-  "name": "voice-foreground-service",
-  "version": "1.0.0",
-  "description": "Local Expo module: Android foreground service that keeps a live voice room's audio and mic alive while the app is backgrounded, with a persistent notification.",
-  "main": "index.ts",
-  "private": true
-}
