@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/native/bubble_preference.dart';
+import '../../core/native/live_bubble_channel.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/providers/repository_providers.dart';
 import '../../core/theme/app_colors.dart';
@@ -23,12 +25,27 @@ class SettingsScreen extends ConsumerStatefulWidget {
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   SettingsDto? _settings;
+  bool _bubbleEnabled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    BubblePreference.isEnabled().then((v) {
+      if (mounted) setState(() => _bubbleEnabled = v);
+    });
+  }
 
   Future<void> _update(SettingsDto next) async {
     setState(() => _settings = next);
     try {
       await ref.read(userRepositoryProvider).updateSettings(next.toJson());
     } catch (_) {}
+  }
+
+  Future<void> _toggleBubble(bool value) async {
+    setState(() => _bubbleEnabled = value);
+    await BubblePreference.setEnabled(value);
+    if (value) await LiveBubbleChannel.requestPermission();
   }
 
   @override
@@ -69,6 +86,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               style: TextStyle(color: AppColors.coral),
             ),
             onTap: () => ref.read(authProvider.notifier).logout(),
+          ),
+          const SizedBox(height: 20),
+          Text('LIVE', style: AppTextStyles.caption()),
+          const SizedBox(height: 8),
+          _SwitchTile(
+            label: 'Burbuja flotante durante LIVE',
+            value: _bubbleEnabled,
+            onChanged: _toggleBubble,
           ),
           const SizedBox(height: 20),
           async.when(

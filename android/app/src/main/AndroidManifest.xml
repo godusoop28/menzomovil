@@ -7,6 +7,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
+    <!-- Burbuja flotante del LIVE (Messenger-style) — opt-in explícito, nunca se pide en el
+         primer inicio de la app, ver LiveBubbleChannel/live_bubble_provider.dart. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
     <application
         android:label="MENZO"
         android:name="${applicationName}"
@@ -42,6 +45,9 @@
             android:name=".BackgroundAudioService"
             android:exported="false"
             android:foregroundServiceType="microphone|mediaPlayback" />
+        <service
+            android:name=".LiveBubbleService"
+            android:exported="false" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and
@@ -52,6 +58,12 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- Requerido por url_launcher (Android 11+ package visibility) para el fallback
+             "Ver en YouTube" de Menzi DJ. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
         </intent>
     </queries>
 </manifest>

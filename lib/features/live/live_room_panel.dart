@@ -2,7 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:permission_handler/permission_handler.dart';
 
+import '../../core/native/bubble_preference.dart';
+import '../../core/native/live_bubble_channel.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_radius.dart';
 import '../../core/theme/app_text_styles.dart';
@@ -38,6 +41,7 @@ class LiveRoomPanel extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final live = ref.watch(liveProvider);
+    final myId = ref.watch(authProvider).profile?.id;
     final isConnectedHere = live.activeRoomId == room.id;
     final stage = isConnectedHere
         ? live.participants.where((p) => _stageRoles.contains(p.role)).toList()
@@ -113,6 +117,7 @@ class LiveRoomPanel extends ConsumerWidget {
             )
           : Column(
               children: [
+                const _BubbleOptInPrompt(),
                 if (announcement != null && announcement.trim().isNotEmpty)
                   Container(
                     width: double.infinity,
@@ -156,10 +161,20 @@ class LiveRoomPanel extends ConsumerWidget {
                           childAspectRatio: 0.8,
                         ),
                     itemCount: stage.length,
-                    itemBuilder: (context, i) => _StageSlot(
-                      participant: stage[i],
-                      level: live.speakingLevels[stage[i].user?.id] ?? 0,
-                    ),
+                    itemBuilder: (context, i) {
+                      final isMe = stage[i].user?.id == myId;
+                      return _StageSlot(
+                        participant: stage[i],
+                        level: live.speakingLevels[stage[i].user?.id] ?? 0,
+                        // El propio mic-off nunca debe depender de la lista de participantes
+                        // (server-side, solo se refresca con eventos STOMP de otros) — si
+                        // estás solo en la sala esa lista jamás se refresca sola y el ícono
+                        // queda pegado. Para uno mismo se usa la verdad local de Agora.
+                        micOffOverride: isMe
+                            ? (live.muted || !live.localAudioPublished)
+                            : null,
+                      );
+                    },
                   ),
                 ),
                 if (audience.isNotEmpty) _AudienceSection(audience: audience),
@@ -168,6 +183,46 @@ class LiveRoomPanel extends ConsumerWidget {
             ),
     );
   }
+}
+
+/// Prompt contextual (una sola vez, nunca en el primer inicio de la app) para pedir permiso de
+/// overlay y activar la burbuja flotante — se monta al entrar a un LIVE, que es exactamente el
+/// momento en que tiene sentido explicarlo. Si el usuario dice que no, o el sistema rechaza el
+/// permiso, no pasa nada: sigue disponible la mini-barra dentro de la app y puede activarla
+/// después desde Configuración (ver `settings_screen.dart`).
+class _BubbleOptInPrompt extends StatefulWidget {
+  const _BubbleOptInPrompt();
+
+  @override
+  State<_BubbleOptInPrompt> createState() => _BubbleOptInPromptState();
+}
+
+class _BubbleOptInPromptState extends State<_BubbleOptInPrompt> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybePrompt());
+  }
+
+  Future<void> _maybePrompt() async {
+    if (await BubblePreference.hasBeenPrompted()) return;
+    await BubblePreference.markPrompted();
+    if (!mounted) return;
+    final accepted = await showConfirmDialog(
+      context,
+      title: 'Burbuja flotante',
+      description:
+          'Permite que Menzo muestre una burbuja durante los LIVE para regresar rápidamente a la llamada.',
+      confirmLabel: 'Permitir',
+      cancelLabel: 'Ahora no',
+    );
+    if (!accepted) return;
+    await BubblePreference.setEnabled(true);
+    await LiveBubbleChannel.requestPermission();
+  }
+
+  @override
+  Widget build(BuildContext context) => const SizedBox.shrink();
 }
 
 class _LiveTimer extends StatefulWidget {
@@ -282,13 +337,23 @@ class _AudienceSectionState extends State<_AudienceSection> {
 }
 
 class _StageSlot extends StatelessWidget {
-  const _StageSlot({required this.participant, required this.level});
+  const _StageSlot({
+    required this.participant,
+    required this.level,
+    this.micOffOverride,
+  });
   final LiveParticipant participant;
   final double level;
+
+  /// Cuando no es `null`, reemplaza a `!participant.microphoneEnabled` — se usa para el propio
+  /// tile del usuario local, cuya verdad de mic vive en [LiveState] (Agora), no en la lista de
+  /// participantes que llega del backend (ver comentario en el `itemBuilder` que instancia esto).
+  final bool? micOffOverride;
 
   @override
   Widget build(BuildContext context) {
     final user = participant.user;
+    final micOff = micOffOverride ?? !participant.microphoneEnabled;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -339,7 +404,7 @@ class _StageSlot extends StatelessWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
-        if (!participant.microphoneEnabled)
+        if (micOff)
           const Icon(Icons.mic_off, size: 14, color: AppColors.coral),
       ],
     );
@@ -357,10 +422,33 @@ class _LiveControls extends ConsumerWidget {
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          if (live.canSpeak)
+          if (live.canSpeak && live.microphonePermissionDenied)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                children: [
+                  const Icon(Icons.mic_off, size: 16, color: AppColors.coral),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Sin permiso de micrófono — estás en el LIVE pero no podés hablar.',
+                      style: AppTextStyles.caption(color: AppColors.coral),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: openAppSettings,
+                    child: const Text('Ajustes'),
+                  ),
+                ],
+              ),
+            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (live.canSpeak)
             IconButton(
               iconSize: 26,
               onPressed: live.microphoneChanging
@@ -404,15 +492,17 @@ class _LiveControls extends ConsumerWidget {
               ),
               child: const Text('Solicitud enviada · Cancelar'),
             ),
-          const SizedBox(width: 12),
-          IconButton(
-            iconSize: 26,
-            onPressed: () => ref.read(liveProvider.notifier).leave(),
-            icon: const Icon(Icons.call_end, color: AppColors.coral),
-            style: IconButton.styleFrom(
-              backgroundColor: AppColors.coral.withValues(alpha: 0.15),
-              padding: const EdgeInsets.all(14),
-            ),
+              const SizedBox(width: 12),
+              IconButton(
+                iconSize: 26,
+                onPressed: () => ref.read(liveProvider.notifier).leave(),
+                icon: const Icon(Icons.call_end, color: AppColors.coral),
+                style: IconButton.styleFrom(
+                  backgroundColor: AppColors.coral.withValues(alpha: 0.15),
+                  padding: const EdgeInsets.all(14),
+                ),
+              ),
+            ],
           ),
         ],
       ),

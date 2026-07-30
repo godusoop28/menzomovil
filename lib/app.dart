@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
+import 'features/live/live_bubble_controller.dart';
 import 'features/live/persistent_voice_bubble.dart';
 import 'features/music/menzi_dj_mini_bar.dart';
 import 'features/music/menzi_dj_player_host.dart';
@@ -33,6 +34,9 @@ class MenzoApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(appRouterProvider);
+    // Se instancia una sola vez acá (Riverpod cachea el resultado) para que el observer de
+    // lifecycle de la burbuja flotante quede activo durante toda la vida de la app.
+    ref.watch(liveBubbleControllerProvider);
     return MaterialApp.router(
       title: 'MENZO',
       debugShowCheckedModeBanner: false,
