@@ -176,7 +176,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
   // overlays persistentes (montados en el `builder` de MaterialApp.router, fuera del árbol de
   // rutas — ver current_location.dart) pueden usar para saber en qué pantalla está el usuario.
   void syncLocation() {
-    ref.read(currentLocationProvider.notifier).state = router.routerDelegate.currentConfiguration.uri.toString();
+    ref.read(currentLocationProvider.notifier).state = router
+        .routerDelegate
+        .currentConfiguration
+        .uri
+        .toString();
   }
 
   router.routerDelegate.addListener(syncLocation);

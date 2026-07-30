@@ -4,6 +4,7 @@
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
     <application
@@ -37,6 +38,10 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <service
+            android:name=".BackgroundAudioService"
+            android:exported="false"
+            android:foregroundServiceType="microphone|mediaPlayback" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

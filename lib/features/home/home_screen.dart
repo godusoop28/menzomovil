@@ -5,14 +5,16 @@ import 'package:go_router/go_router.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/providers/repository_providers.dart';
 import '../../core/theme/app_colors.dart';
-import '../../core/theme/app_gradients.dart';
 import '../../core/theme/app_radius.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../data/models/chat_models.dart';
 import '../../data/models/community_models.dart';
+import '../chat/chat_room_tile.dart';
+import '../chat/create_room_screen.dart';
 import '../post/create_post_screen.dart';
 import '../shared/app_shell.dart';
 import '../shared/menzo_avatar.dart';
+import '../shared/segmented_tabs.dart';
 import 'post_card.dart';
 
 final communityConfigProvider = FutureProvider(
@@ -24,13 +26,41 @@ final liveRoomsProvider = FutureProvider(
 final feedProvider = FutureProvider.autoDispose(
   (ref) => ref.watch(postRepositoryProvider).list(),
 );
+final featuredPostsProvider = FutureProvider.autoDispose(
+  (ref) => ref.watch(postRepositoryProvider).featured(),
+);
+final discoverRoomsProvider = FutureProvider.family.autoDispose(
+  (ref, String sort) => ref.watch(chatRepositoryProvider).discover(sort: sort),
+);
 
-/// 1:1 con menzoweb/app/(app)/page.tsx — hero de comunidad, carrusel de LIVEs, feed.
-class HomeScreen extends ConsumerWidget {
+enum _HomeTab { recientes, destacados, descubrir }
+
+/// 1:1 con menzoweb/app/(app)/page.tsx — hero de comunidad, carrusel de LIVEs, pestañas
+/// Recientes/Destacados/Descubrir.
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> {
+  _HomeTab _tab = _HomeTab.recientes;
+  String _roomSort = 'recent';
+  final _joining = <String>{};
+
+  Future<void> _joinRoom(String roomId) async {
+    setState(() => _joining.add(roomId));
+    try {
+      await ref.read(chatRepositoryProvider).join(roomId);
+      ref.invalidate(discoverRoomsProvider(_roomSort));
+    } finally {
+      if (mounted) setState(() => _joining.remove(roomId));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final auth = ref.watch(authProvider);
     final config = ref.watch(communityConfigProvider);
     final liveRooms = ref.watch(liveRoomsProvider);
@@ -38,6 +68,11 @@ class HomeScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.menu),
+          onPressed: () =>
+              ref.read(shellScaffoldKeyProvider).currentState?.openDrawer(),
+        ),
         title: Row(
           children: [
             Image.asset(
@@ -54,14 +89,6 @@ class HomeScreen extends ConsumerWidget {
             icon: const Icon(Icons.notifications_outlined),
             onPressed: () => context.push('/notifications'),
           ),
-          IconButton(
-            icon: const Icon(Icons.more_vert),
-            onPressed: () => showModalBottomSheet(
-              context: context,
-              backgroundColor: AppColors.surface,
-              builder: (_) => const SecondaryNavSheet(),
-            ),
-          ),
         ],
       ),
       body: RefreshIndicator(
@@ -69,6 +96,8 @@ class HomeScreen extends ConsumerWidget {
           ref.invalidate(communityConfigProvider);
           ref.invalidate(liveRoomsProvider);
           ref.invalidate(feedProvider);
+          ref.invalidate(featuredPostsProvider);
+          ref.invalidate(discoverRoomsProvider(_roomSort));
         },
         child: ListView(
           padding: const EdgeInsets.all(16),
@@ -90,40 +119,275 @@ class HomeScreen extends ConsumerWidget {
               error: (e, st) => const SizedBox.shrink(),
             ),
             const SizedBox(height: 20),
-            Text('Para ti', style: AppTextStyles.h3()),
-            const SizedBox(height: 12),
-            feed.when(
-              data: (page) => Column(
-                children: page.items
-                    .map(
-                      (p) => Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: PostCard(post: p),
+            SegmentedTabs<_HomeTab>(
+              value: _tab,
+              options: _HomeTab.values,
+              onChanged: (t) => setState(() => _tab = t),
+              labelBuilder: (t) => switch (t) {
+                _HomeTab.recientes => 'Recientes',
+                _HomeTab.destacados => 'Destacados',
+                _HomeTab.descubrir => 'Descubrir',
+              },
+            ),
+            const SizedBox(height: 16),
+            switch (_tab) {
+              _HomeTab.recientes => feed.when(
+                data: (page) => page.items.isEmpty
+                    ? Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 40),
+                        child: Text(
+                          'Todavía no hay publicaciones.',
+                          style: AppTextStyles.body(color: AppColors.textMuted),
+                          textAlign: TextAlign.center,
+                        ),
+                      )
+                    : Column(
+                        children: page.items
+                            .map(
+                              (p) => Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: PostCard(post: p),
+                              ),
+                            )
+                            .toList(),
                       ),
-                    )
-                    .toList(),
-              ),
-              loading: () => const Padding(
-                padding: EdgeInsets.symmetric(vertical: 40),
-                child: Center(child: CircularProgressIndicator()),
-              ),
-              error: (e, st) => Padding(
-                padding: const EdgeInsets.symmetric(vertical: 24),
-                child: Text(
-                  'No pudimos cargar el feed.',
-                  style: AppTextStyles.body(color: AppColors.coral),
+                loading: () => const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 40),
+                  child: Center(child: CircularProgressIndicator()),
+                ),
+                error: (e, st) => Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 24),
+                  child: Text(
+                    'No pudimos cargar el feed.',
+                    style: AppTextStyles.body(color: AppColors.coral),
+                  ),
                 ),
               ),
-            ),
+              _HomeTab.destacados =>
+                ref
+                    .watch(featuredPostsProvider)
+                    .when(
+                      data: (page) => page.items.isEmpty
+                          ? Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 40),
+                              child: Text(
+                                'Nada destacado todavía.',
+                                style: AppTextStyles.body(
+                                  color: AppColors.textMuted,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            )
+                          : Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(
+                                    AppRadius.xl,
+                                  ),
+                                  child: Stack(
+                                    children: [
+                                      Positioned.fill(
+                                        child: Image.asset(
+                                          'assets/banners/banner-featured.png',
+                                          fit: BoxFit.cover,
+                                        ),
+                                      ),
+                                      const Positioned.fill(
+                                        child: ColoredBox(
+                                          color: Color(0x4D07090D),
+                                        ),
+                                      ),
+                                      Padding(
+                                        padding: const EdgeInsets.all(20),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text(
+                                              'LO MEJOR DE LA SEMANA',
+                                              style: AppTextStyles.caption(
+                                                color: Colors.white70,
+                                              ),
+                                            ),
+                                            Text(
+                                              'Destacados',
+                                              style: AppTextStyles.h2(
+                                                color: Colors.white,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                ...page.items.map(
+                                  (p) => Padding(
+                                    padding: const EdgeInsets.only(bottom: 12),
+                                    child: PostCard(post: p),
+                                  ),
+                                ),
+                              ],
+                            ),
+                      loading: () => const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 40),
+                        child: Center(child: CircularProgressIndicator()),
+                      ),
+                      error: (e, st) => Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 24),
+                        child: Text(
+                          'No pudimos cargar los destacados.',
+                          style: AppTextStyles.body(color: AppColors.coral),
+                        ),
+                      ),
+                    ),
+              _HomeTab.descubrir => Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Descubrir salas', style: AppTextStyles.h3()),
+                            Text(
+                              'Explora todas las salas públicas de la comunidad.',
+                              style: AppTextStyles.caption(),
+                            ),
+                          ],
+                        ),
+                      ),
+                      TextButton.icon(
+                        onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (context) => const CreateRoomScreen(),
+                          ),
+                        ),
+                        icon: const Icon(Icons.add, size: 16),
+                        label: const Text('Crear sala'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      _SortChip(
+                        label: 'Recientes',
+                        active: _roomSort == 'recent',
+                        onTap: () => setState(() => _roomSort = 'recent'),
+                      ),
+                      const SizedBox(width: 8),
+                      _SortChip(
+                        label: 'Populares',
+                        active: _roomSort == 'popular',
+                        onTap: () => setState(() => _roomSort = 'popular'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  ref
+                      .watch(discoverRoomsProvider(_roomSort))
+                      .when(
+                        data: (rooms) => rooms.isEmpty
+                            ? Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 24,
+                                ),
+                                child: Text(
+                                  'No hay salas activas. Enciende la primera.',
+                                  style: AppTextStyles.body(
+                                    color: AppColors.textMuted,
+                                  ),
+                                ),
+                              )
+                            : Column(
+                                children: rooms
+                                    .map(
+                                      (room) => Padding(
+                                        padding: const EdgeInsets.only(
+                                          bottom: 8,
+                                        ),
+                                        child: ChatRoomTile(
+                                          room: room,
+                                          onJoin: room.joined
+                                              ? null
+                                              : () => _joinRoom(room.id),
+                                          joining: _joining.contains(room.id),
+                                        ),
+                                      ),
+                                    )
+                                    .toList(),
+                              ),
+                        loading: () => const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 40),
+                          child: Center(child: CircularProgressIndicator()),
+                        ),
+                        error: (e, st) => Text(
+                          'No pudimos cargar las salas.',
+                          style: AppTextStyles.body(color: AppColors.coral),
+                        ),
+                      ),
+                  const SizedBox(height: 12),
+                  Center(
+                    child: TextButton(
+                      onPressed: () => context.push('/events'),
+                      child: Text(
+                        'Ver eventos de la comunidad →',
+                        style: AppTextStyles.label(color: AppColors.cyan),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            },
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (context) => const CreatePostScreen()),
+      floatingActionButton: _tab == _HomeTab.recientes
+          ? FloatingActionButton(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (context) => const CreatePostScreen(),
+                ),
+              ),
+              backgroundColor: AppColors.orange,
+              child: const Icon(Icons.add, color: Colors.black),
+            )
+          : null,
+    );
+  }
+}
+
+class _SortChip extends StatelessWidget {
+  const _SortChip({
+    required this.label,
+    required this.active,
+    required this.onTap,
+  });
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        decoration: BoxDecoration(
+          color: active ? AppColors.surfaceSoft : Colors.transparent,
+          borderRadius: BorderRadius.circular(AppRadius.pill),
         ),
-        backgroundColor: AppColors.orange,
-        child: const Icon(Icons.add, color: Colors.black),
+        child: Text(
+          label,
+          style: AppTextStyles.caption(
+            color: active ? AppColors.textPrimary : AppColors.textMuted,
+          ),
+        ),
       ),
     );
   }
@@ -136,34 +400,69 @@ class _CommunityHero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: AppGradients.linear(GradientId.community, angle: 120),
-        borderRadius: BorderRadius.circular(AppRadius.xl),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(AppRadius.xl),
+      child: Stack(
         children: [
-          Text(
-            'Hola, $profileName',
-            style: AppTextStyles.h2(color: Colors.black),
+          Positioned.fill(
+            child: Image.asset(
+              'assets/banners/banner-community.png',
+              fit: BoxFit.cover,
+            ),
           ),
-          const SizedBox(height: 4),
-          Text(
-            config.subtitle ?? 'Bienvenido a ${config.name}',
-            style: AppTextStyles.body(color: Colors.black87),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              const Icon(Icons.circle, size: 8, color: Colors.black87),
-              const SizedBox(width: 6),
-              Text(
-                '${config.onlineCount} conectados · ${config.memberCount} miembros',
-                style: AppTextStyles.caption(color: Colors.black87),
-              ),
-            ],
+          const Positioned.fill(child: ColoredBox(color: Color(0x6B07090D))),
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Hola, $profileName',
+                  style: AppTextStyles.h2(color: Colors.white),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  config.subtitle ?? 'Bienvenido a ${config.name}',
+                  style: AppTextStyles.body(color: Colors.white70),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    const Icon(Icons.circle, size: 8, color: Colors.white70),
+                    const SizedBox(width: 6),
+                    Text(
+                      '${config.onlineCount} conectados · ${config.memberCount} miembros',
+                      style: AppTextStyles.caption(color: Colors.white70),
+                    ),
+                  ],
+                ),
+                if (config.tags.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: config.tags
+                        .map(
+                          (tag) => Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              tag,
+                              style: AppTextStyles.caption(color: Colors.white),
+                            ),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ],
+              ],
+            ),
           ),
         ],
       ),

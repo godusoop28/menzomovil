@@ -11,6 +11,7 @@ import '../../core/theme/app_radius.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../shared/gradient_button.dart';
 import '../shared/menzo_avatar.dart';
+import '../shared/menzo_image_background.dart';
 import '../shared/menzo_toast.dart';
 import 'onboarding_draft_provider.dart';
 
@@ -39,55 +40,58 @@ class OnboardingFlowScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
-              child: Row(
-                children: List.generate(onboardingSteps.length, (i) {
-                  final active = i <= _index;
-                  return Expanded(
-                    child: Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 3),
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: active
-                            ? AppColors.orange
-                            : AppColors.surfaceSoft,
-                        borderRadius: BorderRadius.circular(4),
+      body: MenzoImageBackground(
+        imagePath: 'assets/backgrounds/background-onboarding.png',
+        child: SafeArea(
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+                child: Row(
+                  children: List.generate(onboardingSteps.length, (i) {
+                    final active = i <= _index;
+                    return Expanded(
+                      child: Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 3),
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: active
+                              ? AppColors.orange
+                              : AppColors.surfaceSoft,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
                       ),
+                    );
+                  }),
+                ),
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: switch (step) {
+                    'name' => _NameStep(
+                      onNext: () => _goToStep(context, _index + 1),
                     ),
-                  );
-                }),
+                    'aura' => _AuraStep(
+                      onNext: () => _goToStep(context, _index + 1),
+                      onBack: () => _goToStep(context, _index - 1),
+                    ),
+                    'avatar' => _AvatarStep(
+                      onNext: () => _goToStep(context, _index + 1),
+                      onBack: () => _goToStep(context, _index - 1),
+                    ),
+                    'interests' => _InterestsStep(
+                      onNext: () => _goToStep(context, _index + 1),
+                      onBack: () => _goToStep(context, _index - 1),
+                    ),
+                    _ => _ConfirmStep(
+                      onBack: () => _goToStep(context, _index - 1),
+                    ),
+                  },
+                ),
               ),
-            ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: switch (step) {
-                  'name' => _NameStep(
-                    onNext: () => _goToStep(context, _index + 1),
-                  ),
-                  'aura' => _AuraStep(
-                    onNext: () => _goToStep(context, _index + 1),
-                    onBack: () => _goToStep(context, _index - 1),
-                  ),
-                  'avatar' => _AvatarStep(
-                    onNext: () => _goToStep(context, _index + 1),
-                    onBack: () => _goToStep(context, _index - 1),
-                  ),
-                  'interests' => _InterestsStep(
-                    onNext: () => _goToStep(context, _index + 1),
-                    onBack: () => _goToStep(context, _index - 1),
-                  ),
-                  _ => _ConfirmStep(
-                    onBack: () => _goToStep(context, _index - 1),
-                  ),
-                },
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

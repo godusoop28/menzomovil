@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/providers/repository_providers.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_radius.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../shared/menzi_illustration_state.dart';
 import '../shared/menzo_avatar.dart';
@@ -42,6 +43,41 @@ class MembersScreen extends ConsumerWidget {
             return ListView(
               padding: const EdgeInsets.all(16),
               children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(AppRadius.xl),
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: Image.asset(
+                          'assets/banners/banner-connections.png',
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                      const Positioned.fill(
+                        child: ColoredBox(color: Color(0x6B07090D)),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.all(20),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'Tu comunidad',
+                              style: AppTextStyles.h2(color: Colors.white),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '${page.items.length} miembros · ${online.length} conectados',
+                              style: AppTextStyles.body(color: Colors.white70),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
                 if (online.isNotEmpty) ...[
                   Text('Conectados', style: AppTextStyles.label()),
                   const SizedBox(height: 8),

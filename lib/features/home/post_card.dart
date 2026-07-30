@@ -23,6 +23,7 @@ class PostCard extends ConsumerStatefulWidget {
 
 class _PostCardState extends ConsumerState<PostCard> {
   late Post _post = widget.post;
+  bool _voting = false;
 
   Future<void> _toggleLike() async {
     final repo = ref.read(postRepositoryProvider);
@@ -46,6 +47,35 @@ class _PostCardState extends ConsumerState<PostCard> {
           likeCount: widget.post.likeCount,
         ),
       );
+    }
+  }
+
+  Future<void> _toggleBookmark() async {
+    final repo = ref.read(postRepositoryProvider);
+    final wasBookmarked = _post.bookmarkedByMe;
+    setState(() => _post = _post.copyWith(bookmarkedByMe: !wasBookmarked));
+    try {
+      if (wasBookmarked) {
+        await repo.unbookmark(_post.id);
+      } else {
+        await repo.bookmark(_post.id);
+      }
+    } catch (_) {
+      setState(() => _post = _post.copyWith(bookmarkedByMe: wasBookmarked));
+    }
+  }
+
+  Future<void> _vote(String optionId) async {
+    if (_voting) return;
+    setState(() => _voting = true);
+    try {
+      final updated = await ref
+          .read(postRepositoryProvider)
+          .vote(_post.id, optionId);
+      if (mounted) setState(() => _post = updated);
+    } catch (_) {
+    } finally {
+      if (mounted) setState(() => _voting = false);
     }
   }
 
@@ -90,7 +120,14 @@ class _PostCardState extends ConsumerState<PostCard> {
               maxLines: 4,
               overflow: TextOverflow.ellipsis,
             ),
-            if (post.imageUri != null) ...[
+            if (post.type == PostType.poll && post.pollOptions.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              _PollOptions(
+                options: post.pollOptions,
+                disabled: _voting,
+                onVote: _vote,
+              ),
+            ] else if (post.imageUri != null) ...[
               const SizedBox(height: 10),
               ClipRRect(
                 borderRadius: BorderRadius.circular(AppRadius.md),
@@ -139,11 +176,102 @@ class _PostCardState extends ConsumerState<PostCard> {
                 ),
                 const SizedBox(width: 4),
                 Text('${post.commentCount}', style: AppTextStyles.caption()),
+                const Spacer(),
+                GestureDetector(
+                  onTap: _toggleBookmark,
+                  child: Icon(
+                    post.bookmarkedByMe
+                        ? Icons.bookmark
+                        : Icons.bookmark_border,
+                    size: 18,
+                    color: post.bookmarkedByMe
+                        ? AppColors.orange
+                        : AppColors.textMuted,
+                  ),
+                ),
               ],
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+/// 1:1 con menzoweb/components/PollCard.tsx — barra de progreso por opción, deshabilitada tras
+/// votar (`votedByMe` en cualquier opción implica que ya voté en esta encuesta).
+class _PollOptions extends StatelessWidget {
+  const _PollOptions({
+    required this.options,
+    required this.disabled,
+    required this.onVote,
+  });
+  final List<PollOption> options;
+  final bool disabled;
+  final ValueChanged<String> onVote;
+
+  @override
+  Widget build(BuildContext context) {
+    final totalVotes = options.fold<int>(0, (sum, o) => sum + o.voteCount);
+    final alreadyVoted = options.any((o) => o.votedByMe);
+    return Column(
+      children: options.map((option) {
+        final ratio = totalVotes == 0 ? 0.0 : option.voteCount / totalVotes;
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: GestureDetector(
+            onTap: (disabled || alreadyVoted) ? null : () => onVote(option.id),
+            child: Stack(
+              children: [
+                Container(
+                  height: 40,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceSoft,
+                    borderRadius: BorderRadius.circular(AppRadius.md),
+                  ),
+                ),
+                if (alreadyVoted)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: FractionallySizedBox(
+                      widthFactor: ratio.clamp(0.0, 1.0),
+                      child: Container(
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: option.votedByMe
+                              ? AppColors.orange.withValues(alpha: 0.5)
+                              : AppColors.surfaceElevated,
+                          borderRadius: BorderRadius.circular(AppRadius.md),
+                        ),
+                      ),
+                    ),
+                  ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          option.label,
+                          style: AppTextStyles.body(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (alreadyVoted)
+                        Text(
+                          '${(ratio * 100).round()}%',
+                          style: AppTextStyles.caption(),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }).toList(),
     );
   }
 }

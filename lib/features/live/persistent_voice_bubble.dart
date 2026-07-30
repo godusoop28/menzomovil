@@ -32,7 +32,8 @@ class PersistentVoiceBubble extends ConsumerWidget {
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(AppRadius.pill),
-          onTap: () => ref.read(appRouterProvider).push('/chat/${live.activeRoomId}'),
+          onTap: () =>
+              ref.read(appRouterProvider).push('/chat/${live.activeRoomId}'),
           child: Container(
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(

@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/providers/repository_providers.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_gradients.dart';
+import '../../core/theme/app_radius.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../data/models/user_models.dart';
 import '../home/post_card.dart';
@@ -66,60 +67,91 @@ class _MemberProfileScreenState extends ConsumerState<MemberProfileScreen> {
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              Center(
-                child: MenzoAvatar(
-                  name: profile.displayName,
-                  avatarUri: profile.avatarUri,
-                  gradient: gradientIdFromName(profile.avatarGradient),
-                  size: 96,
-                  level: profile.level,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Center(
-                child: Text(profile.displayName, style: AppTextStyles.h2()),
-              ),
-              Center(
-                child: Text(
-                  '@${profile.username}',
-                  style: AppTextStyles.caption(),
-                ),
-              ),
-              if (profile.bio != null) ...[
-                const SizedBox(height: 8),
-                Center(
-                  child: Text(
-                    profile.bio!,
-                    style: AppTextStyles.body(color: AppColors.textSecondary),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-              ],
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  GestureDetector(
-                    onTap: () =>
-                        context.push('/connections/${widget.id}/followers'),
-                    child: Column(
-                      children: [
-                        Text('${profile.followers}', style: AppTextStyles.h3()),
-                        const Text('Seguidores'),
-                      ],
+              ClipRRect(
+                borderRadius: BorderRadius.circular(AppRadius.xl),
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: Image.asset(
+                        'assets/backgrounds/background-profile.png',
+                        fit: BoxFit.cover,
+                      ),
                     ),
-                  ),
-                  GestureDetector(
-                    onTap: () =>
-                        context.push('/connections/${widget.id}/following'),
-                    child: Column(
-                      children: [
-                        Text('${profile.following}', style: AppTextStyles.h3()),
-                        const Text('Siguiendo'),
-                      ],
+                    const Positioned.fill(
+                      child: ColoredBox(color: Color(0x8007090D)),
                     ),
-                  ),
-                ],
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 24,
+                        horizontal: 16,
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          MenzoAvatar(
+                            name: profile.displayName,
+                            avatarUri: profile.avatarUri,
+                            gradient: gradientIdFromName(
+                              profile.avatarGradient,
+                            ),
+                            size: 96,
+                            level: profile.level,
+                          ),
+                          const SizedBox(height: 12),
+                          Text(profile.displayName, style: AppTextStyles.h2()),
+                          Text(
+                            '@${profile.username}',
+                            style: AppTextStyles.caption(),
+                          ),
+                          if (profile.bio != null) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              profile.bio!,
+                              style: AppTextStyles.body(
+                                color: AppColors.textSecondary,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                          const SizedBox(height: 16),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            children: [
+                              GestureDetector(
+                                onTap: () => context.push(
+                                  '/connections/${widget.id}/followers',
+                                ),
+                                child: Column(
+                                  children: [
+                                    Text(
+                                      '${profile.followers}',
+                                      style: AppTextStyles.h3(),
+                                    ),
+                                    const Text('Seguidores'),
+                                  ],
+                                ),
+                              ),
+                              GestureDetector(
+                                onTap: () => context.push(
+                                  '/connections/${widget.id}/following',
+                                ),
+                                child: Column(
+                                  children: [
+                                    Text(
+                                      '${profile.following}',
+                                      style: AppTextStyles.h3(),
+                                    ),
+                                    const Text('Siguiendo'),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
               const SizedBox(height: 16),
               Row(

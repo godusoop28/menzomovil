@@ -1,13 +1,19 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_radius.dart';
 import '../../core/theme/app_text_styles.dart';
+import '../../core/providers/auth_provider.dart';
 import '../../data/models/chat_models.dart';
 import '../../data/models/live_models.dart';
 import '../music/menzi_dj_panel.dart';
+import '../shared/confirm_dialog.dart';
 import '../shared/menzi_illustration_state.dart';
 import '../shared/menzo_avatar.dart';
+import '../shared/menzo_sheet.dart';
 import '../shared/menzo_toast.dart';
 import 'live_provider.dart';
 
@@ -18,7 +24,7 @@ const _stageRoles = {
 };
 
 /// 1:1 con menzoweb/components/live/LiveRoomPanel.tsx — panel de pantalla completa del LIVE:
-/// escenario de hablantes, controles de mic/mano, audiencia, y entrada a Menzi DJ.
+/// escenario de hablantes, anuncio, temporizador, audiencia, moderación y entrada a Menzi DJ.
 class LiveRoomPanel extends ConsumerWidget {
   const LiveRoomPanel({
     super.key,
@@ -39,8 +45,7 @@ class LiveRoomPanel extends ConsumerWidget {
     final audience = isConnectedHere
         ? live.participants.where((p) => !_stageRoles.contains(p.role)).toList()
         : <LiveParticipant>[];
-    final canModerate =
-        room.role == RoomRole.owner || room.role == RoomRole.coHost;
+    final announcement = isConnectedHere ? live.session?.announcement : null;
 
     return Scaffold(
       backgroundColor: AppColors.backgroundDeep,
@@ -73,9 +78,20 @@ class LiveRoomPanel extends ConsumerWidget {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
+            if (isConnectedHere && live.session?.startedAt != null)
+              _LiveTimer(startedAt: live.session!.startedAt!),
           ],
         ),
         actions: [
+          if (isConnectedHere && live.canModerate)
+            IconButton(
+              icon: Badge(
+                isLabelVisible: live.speakingRequests.isNotEmpty,
+                label: Text('${live.speakingRequests.length}'),
+                child: const Icon(Icons.settings_outlined),
+              ),
+              onPressed: () => _showModerationSheet(context, ref, room),
+            ),
           IconButton(
             icon: const Icon(Icons.music_note_outlined),
             onPressed: () => showMenziDjPanel(context, room: room),
@@ -97,6 +113,38 @@ class LiveRoomPanel extends ConsumerWidget {
             )
           : Column(
               children: [
+                if (announcement != null && announcement.trim().isNotEmpty)
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.orange.withValues(alpha: 0.16),
+                      borderRadius: BorderRadius.circular(AppRadius.md),
+                      border: Border.all(
+                        color: AppColors.orange.withValues(alpha: 0.4),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.campaign_outlined,
+                          size: 18,
+                          color: AppColors.orange,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            announcement,
+                            style: AppTextStyles.body(),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 Expanded(
                   child: GridView.builder(
                     padding: const EdgeInsets.all(16),
@@ -114,20 +162,121 @@ class LiveRoomPanel extends ConsumerWidget {
                     ),
                   ),
                 ),
-                if (audience.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'Escuchando (${audience.length})',
-                        style: AppTextStyles.caption(),
-                      ),
-                    ),
-                  ),
-                _LiveControls(room: room, canModerate: canModerate),
+                if (audience.isNotEmpty) _AudienceSection(audience: audience),
+                _LiveControls(room: room),
               ],
             ),
+    );
+  }
+}
+
+class _LiveTimer extends StatefulWidget {
+  const _LiveTimer({required this.startedAt});
+  final DateTime startedAt;
+
+  @override
+  State<_LiveTimer> createState() => _LiveTimerState();
+}
+
+class _LiveTimerState extends State<_LiveTimer> {
+  late Timer _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final elapsed = DateTime.now().difference(widget.startedAt);
+    final minutes = elapsed.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final seconds = elapsed.inSeconds.remainder(60).toString().padLeft(2, '0');
+    final hours = elapsed.inHours;
+    final label = hours > 0 ? '$hours:$minutes:$seconds' : '$minutes:$seconds';
+    return Text(
+      label,
+      style: AppTextStyles.caption(color: AppColors.textMuted),
+    );
+  }
+}
+
+class _AudienceSection extends StatefulWidget {
+  const _AudienceSection({required this.audience});
+  final List<LiveParticipant> audience;
+
+  @override
+  State<_AudienceSection> createState() => _AudienceSectionState();
+}
+
+class _AudienceSectionState extends State<_AudienceSection> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InkWell(
+            onTap: () => setState(() => _expanded = !_expanded),
+            child: Row(
+              children: [
+                Text(
+                  'Escuchando (${widget.audience.length})',
+                  style: AppTextStyles.caption(),
+                ),
+                const SizedBox(width: 4),
+                Icon(
+                  _expanded ? Icons.expand_less : Icons.expand_more,
+                  size: 16,
+                  color: AppColors.textMuted,
+                ),
+              ],
+            ),
+          ),
+          if (_expanded)
+            Padding(
+              padding: const EdgeInsets.only(top: 8, bottom: 4),
+              child: Wrap(
+                spacing: 12,
+                runSpacing: 8,
+                children: widget.audience
+                    .map(
+                      (p) => SizedBox(
+                        width: 56,
+                        child: Column(
+                          children: [
+                            MenzoAvatar(
+                              name: p.user?.displayName ?? '?',
+                              avatarUri: p.user?.avatarUri,
+                              size: 40,
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              p.user?.displayName ?? '',
+                              style: AppTextStyles.caption(),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                    .toList(),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -143,20 +292,45 @@ class _StageSlot extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Container(
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(
-              color: AppColors.orange.withValues(alpha: 0.4 + level * 0.6),
-              width: 2 + level * 2,
+        Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Container(
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: AppColors.orange.withValues(alpha: 0.4 + level * 0.6),
+                  width: 2 + level * 2,
+                ),
+              ),
+              padding: const EdgeInsets.all(3),
+              child: MenzoAvatar(
+                name: user?.displayName ?? '?',
+                avatarUri: user?.avatarUri,
+                size: 56,
+              ),
             ),
-          ),
-          padding: const EdgeInsets.all(3),
-          child: MenzoAvatar(
-            name: user?.displayName ?? '?',
-            avatarUri: user?.avatarUri,
-            size: 56,
-          ),
+            if (participant.role == LiveParticipantRole.host ||
+                participant.role == LiveParticipantRole.coHost)
+              Positioned(
+                right: -2,
+                bottom: -2,
+                child: Container(
+                  padding: const EdgeInsets.all(3),
+                  decoration: const BoxDecoration(
+                    color: AppColors.surfaceElevated,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    participant.role == LiveParticipantRole.host
+                        ? Icons.star
+                        : Icons.shield,
+                    size: 12,
+                    color: AppColors.orange,
+                  ),
+                ),
+              ),
+          ],
         ),
         const SizedBox(height: 4),
         Text(
@@ -173,9 +347,8 @@ class _StageSlot extends StatelessWidget {
 }
 
 class _LiveControls extends ConsumerWidget {
-  const _LiveControls({required this.room, required this.canModerate});
+  const _LiveControls({required this.room});
   final ChatRoom room;
-  final bool canModerate;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -239,6 +412,267 @@ class _LiveControls extends ConsumerWidget {
             style: IconButton.styleFrom(
               backgroundColor: AppColors.coral.withValues(alpha: 0.15),
               padding: const EdgeInsets.all(14),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+void _showModerationSheet(BuildContext context, WidgetRef ref, ChatRoom room) {
+  showMenzoSheet(
+    context: context,
+    title: 'Moderar LIVE',
+    subtitle: 'Solicitudes, participantes y anuncio',
+    builder: (context) => _ModerationSheetBody(room: room),
+  );
+}
+
+class _ModerationSheetBody extends ConsumerStatefulWidget {
+  const _ModerationSheetBody({required this.room});
+  final ChatRoom room;
+
+  @override
+  ConsumerState<_ModerationSheetBody> createState() =>
+      _ModerationSheetBodyState();
+}
+
+class _ModerationSheetBodyState extends ConsumerState<_ModerationSheetBody> {
+  late final TextEditingController _announcementController;
+
+  @override
+  void initState() {
+    super.initState();
+    final live = ref.read(liveProvider);
+    _announcementController = TextEditingController(
+      text: live.session?.announcement ?? '',
+    );
+  }
+
+  @override
+  void dispose() {
+    _announcementController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _saveAnnouncement() async {
+    try {
+      await ref
+          .read(liveProvider.notifier)
+          .updateAnnouncement(
+            widget.room.id,
+            _announcementController.text.trim(),
+          );
+      if (mounted) showMenzoToast(context, 'Anuncio actualizado.');
+    } catch (_) {
+      if (mounted) showMenzoToast(context, 'No pudimos actualizar el anuncio.');
+    }
+  }
+
+  Future<void> _endLive() async {
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'Finalizar LIVE',
+      description: 'Se cerrará para todos los participantes.',
+      confirmLabel: 'Finalizar',
+      danger: true,
+    );
+    if (!confirmed) return;
+    try {
+      await ref.read(liveProvider.notifier).endLiveForAll(widget.room.id);
+      if (mounted) Navigator.of(context).maybePop();
+    } catch (_) {
+      if (mounted) showMenzoToast(context, 'No pudimos finalizar el LIVE.');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final live = ref.watch(liveProvider);
+    final myId = ref.watch(authProvider).profile?.id;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Anuncio', style: AppTextStyles.label()),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _announcementController,
+          style: AppTextStyles.body(),
+          maxLines: 2,
+          decoration: const InputDecoration(
+            hintText: 'Ej: Haciendo un 24hs, no me eliminen ni cancelen la…',
+          ),
+        ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton(
+            onPressed: _saveAnnouncement,
+            child: const Text('Guardar anuncio'),
+          ),
+        ),
+        const Divider(height: 28, color: AppColors.borderSoft),
+        Text(
+          'Solicitudes para hablar (${live.speakingRequests.length})',
+          style: AppTextStyles.label(),
+        ),
+        const SizedBox(height: 8),
+        if (live.speakingRequests.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Text(
+              'Nadie pidió el micrófono todavía.',
+              style: AppTextStyles.body(color: AppColors.textMuted),
+            ),
+          )
+        else
+          ...live.speakingRequests.map(
+            (p) => _RequestTile(
+              participant: p,
+              onApprove: () => ref
+                  .read(liveProvider.notifier)
+                  .approveSpeaking(widget.room.id, p.user!.id),
+              onReject: () => ref
+                  .read(liveProvider.notifier)
+                  .rejectSpeaking(widget.room.id, p.user!.id),
+            ),
+          ),
+        const Divider(height: 28, color: AppColors.borderSoft),
+        Text('Participantes', style: AppTextStyles.label()),
+        const SizedBox(height: 8),
+        ...live.participants
+            .where((p) => p.user != null && p.user!.id != myId)
+            .map(
+              (p) => _ParticipantModTile(
+                participant: p,
+                onMute: p.microphoneEnabled
+                    ? () => ref
+                          .read(liveProvider.notifier)
+                          .muteParticipant(widget.room.id, p.user!.id)
+                    : null,
+                onDemote:
+                    _stageRoles.contains(p.role) &&
+                        p.role != LiveParticipantRole.host
+                    ? () => ref
+                          .read(liveProvider.notifier)
+                          .demoteParticipant(widget.room.id, p.user!.id)
+                    : null,
+                onRemove: () => ref
+                    .read(liveProvider.notifier)
+                    .removeParticipant(widget.room.id, p.user!.id),
+              ),
+            ),
+        const Divider(height: 28, color: AppColors.borderSoft),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: _endLive,
+            icon: const Icon(Icons.stop_circle_outlined),
+            label: const Text('Finalizar LIVE para todos'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.coral,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppRadius.pill),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _RequestTile extends StatelessWidget {
+  const _RequestTile({
+    required this.participant,
+    required this.onApprove,
+    required this.onReject,
+  });
+  final LiveParticipant participant;
+  final VoidCallback onApprove;
+  final VoidCallback onReject;
+
+  @override
+  Widget build(BuildContext context) {
+    final user = participant.user;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          MenzoAvatar(
+            name: user?.displayName ?? '?',
+            avatarUri: user?.avatarUri,
+            size: 36,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(user?.displayName ?? '', style: AppTextStyles.body()),
+          ),
+          IconButton(
+            onPressed: onReject,
+            icon: const Icon(Icons.close, color: AppColors.coral),
+          ),
+          IconButton(
+            onPressed: onApprove,
+            icon: const Icon(Icons.check, color: AppColors.orange),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ParticipantModTile extends StatelessWidget {
+  const _ParticipantModTile({
+    required this.participant,
+    this.onMute,
+    this.onDemote,
+    required this.onRemove,
+  });
+  final LiveParticipant participant;
+  final VoidCallback? onMute;
+  final VoidCallback? onDemote;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final user = participant.user;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          MenzoAvatar(
+            name: user?.displayName ?? '?',
+            avatarUri: user?.avatarUri,
+            size: 36,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(user?.displayName ?? '', style: AppTextStyles.body()),
+          ),
+          if (onMute != null)
+            IconButton(
+              tooltip: 'Silenciar',
+              onPressed: onMute,
+              icon: const Icon(Icons.mic_off, size: 18),
+            ),
+          if (onDemote != null)
+            IconButton(
+              tooltip: 'Bajar del escenario',
+              onPressed: onDemote,
+              icon: const Icon(Icons.arrow_downward, size: 18),
+            ),
+          IconButton(
+            tooltip: 'Expulsar',
+            onPressed: onRemove,
+            icon: const Icon(
+              Icons.person_remove_outlined,
+              size: 18,
+              color: AppColors.coral,
             ),
           ),
         ],

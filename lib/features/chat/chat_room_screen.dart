@@ -1,6 +1,10 @@
+import 'dart:async';
+
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 
 import '../../core/network/stomp_service.dart';
 import '../../core/providers/auth_provider.dart';
@@ -40,6 +44,10 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen> {
   final List<ChatMessage> _liveMessages = [];
   StompChannel? _channel;
   bool _sending = false;
+  bool _autoJoinAttempted = false;
+  final Map<String, String> _typingUsers = {};
+  final Map<String, Timer> _typingExpiry = {};
+  DateTime _lastTypingPublish = DateTime.fromMillisecondsSinceEpoch(0);
 
   @override
   void initState() {
@@ -55,6 +63,29 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen> {
               (_) => _scrollToBottom(),
             );
           });
+          _channel!.subscribe('/topic/rooms/${widget.roomId}/typing', (
+            payload,
+          ) {
+            final userId = payload['userId'] as String?;
+            final myId = ref.read(authProvider).profile?.id;
+            if (userId == null || userId == myId) return;
+            _typingExpiry[userId]?.cancel();
+            if (payload['typing'] != true) {
+              _typingExpiry.remove(userId);
+              if (mounted) setState(() => _typingUsers.remove(userId));
+              return;
+            }
+            if (mounted) {
+              setState(
+                () => _typingUsers[userId] =
+                    payload['displayName'] as String? ?? '',
+              );
+            }
+            _typingExpiry[userId] = Timer(const Duration(seconds: 3), () {
+              _typingExpiry.remove(userId);
+              if (mounted) setState(() => _typingUsers.remove(userId));
+            });
+          });
         },
       );
     Future.microtask(
@@ -65,10 +96,59 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen> {
   @override
   void dispose() {
     _channel?.dispose();
+    for (final timer in _typingExpiry.values) {
+      timer.cancel();
+    }
     ref.read(liveProvider.notifier).unwatchRoom(widget.roomId);
     _draftController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _notifyTyping() {
+    final now = DateTime.now();
+    if (now.difference(_lastTypingPublish) < const Duration(seconds: 2)) return;
+    _lastTypingPublish = now;
+    _channel?.send('/app/rooms/${widget.roomId}/typing', {'typing': true});
+  }
+
+  /// Arma la lista mensajes+separadores de fecha, agrupando burbujas consecutivas del mismo
+  /// autor (estilo Amino/Discord) para no repetir avatar/nombre en cada línea.
+  List<Widget> _buildTimeline(List<ChatMessage> messages, String? myId) {
+    final widgets = <Widget>[];
+    DateTime? lastDay;
+    for (var i = 0; i < messages.length; i++) {
+      final message = messages[i];
+      final day = DateTime(
+        message.createdAt.year,
+        message.createdAt.month,
+        message.createdAt.day,
+      );
+      if (lastDay == null || day != lastDay) {
+        widgets.add(_DateSeparator(date: day));
+        lastDay = day;
+      }
+      final previous = i > 0 ? messages[i - 1] : null;
+      final showHeader =
+          previous == null ||
+          previous.author?.id != message.author?.id ||
+          message.createdAt.difference(previous.createdAt) >
+              const Duration(minutes: 5) ||
+          DateTime(
+                previous.createdAt.year,
+                previous.createdAt.month,
+                previous.createdAt.day,
+              ) !=
+              day;
+      widgets.add(
+        _MessageBubble(
+          message: message,
+          isMe: message.author?.id == myId,
+          showHeader: showHeader,
+        ),
+      );
+    }
+    return widgets;
   }
 
   void _scrollToBottom() {
@@ -110,6 +190,8 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen> {
     try {
       await ref.read(liveRepositoryProvider).start(room.id);
       ref.invalidate(roomProvider(widget.roomId));
+      _autoJoinAttempted = true;
+      await ref.read(liveProvider.notifier).join(room.id);
       if (mounted) _openLivePanel(room);
     } catch (_) {
       if (mounted) showMenzoToast(context, 'No pudimos iniciar el LIVE.');
@@ -134,6 +216,19 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen> {
     final messagesAsync = ref.watch(roomMessagesProvider(widget.roomId));
     final myId = ref.watch(authProvider).profile?.id;
     final live = ref.watch(liveProvider);
+
+    // Auto-unirse como audiencia al entrar a una sala con LIVE activo — 1:1 con el efecto de
+    // menzoweb/app/(app)/chat/[id]/page.tsx que evita que el usuario tenga que tocar "Escuchar"
+    // manualmente cada vez que entra a un chat que ya tiene un LIVE en curso.
+    roomAsync.whenData((room) {
+      if (room.live &&
+          !_autoJoinAttempted &&
+          !live.connecting &&
+          live.activeRoomId != room.id) {
+        _autoJoinAttempted = true;
+        Future.microtask(() => ref.read(liveProvider.notifier).join(room.id));
+      }
+    });
 
     return Scaffold(
       appBar: AppBar(
@@ -231,14 +326,12 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen> {
                     ),
                   );
                 }
+                final timeline = _buildTimeline(all, myId);
                 return ListView.builder(
                   controller: _scrollController,
                   padding: const EdgeInsets.all(16),
-                  itemCount: all.length,
-                  itemBuilder: (context, i) => _MessageBubble(
-                    message: all[i],
-                    isMe: all[i].author?.id == myId,
-                  ),
+                  itemCount: timeline.length,
+                  itemBuilder: (context, i) => timeline[i],
                 );
               },
               loading: () => const Center(child: CircularProgressIndicator()),
@@ -272,6 +365,19 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen> {
                 ),
               ),
             ),
+          if (_typingUsers.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  _typingUsers.length == 1
+                      ? '${_typingUsers.values.first} está escribiendo…'
+                      : '${_typingUsers.length} personas están escribiendo…',
+                  style: AppTextStyles.caption(color: AppColors.textMuted),
+                ),
+              ),
+            ),
           SafeArea(
             top: false,
             child: Padding(
@@ -295,6 +401,7 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen> {
                           borderSide: BorderSide.none,
                         ),
                       ),
+                      onChanged: (_) => _notifyTyping(),
                       onSubmitted: (_) => _send(),
                     ),
                   ),
@@ -317,10 +424,52 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen> {
   }
 }
 
+class _DateSeparator extends StatelessWidget {
+  const _DateSeparator({required this.date});
+  final DateTime date;
+
+  @override
+  Widget build(BuildContext context) {
+    final today = DateTime.now();
+    final isToday =
+        date.year == today.year &&
+        date.month == today.month &&
+        date.day == today.day;
+    final yesterday = today.subtract(const Duration(days: 1));
+    final isYesterday =
+        date.year == yesterday.year &&
+        date.month == yesterday.month &&
+        date.day == yesterday.day;
+    final label = isToday
+        ? 'Hoy'
+        : isYesterday
+        ? 'Ayer'
+        : DateFormat('d MMMM', 'es_MX').format(date);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          decoration: BoxDecoration(
+            color: AppColors.surfaceSecondary,
+            borderRadius: BorderRadius.circular(AppRadius.pill),
+          ),
+          child: Text(label, style: AppTextStyles.caption()),
+        ),
+      ),
+    );
+  }
+}
+
 class _MessageBubble extends StatelessWidget {
-  const _MessageBubble({required this.message, required this.isMe});
+  const _MessageBubble({
+    required this.message,
+    required this.isMe,
+    required this.showHeader,
+  });
   final ChatMessage message;
   final bool isMe;
+  final bool showHeader;
 
   @override
   Widget build(BuildContext context) {
@@ -332,35 +481,85 @@ class _MessageBubble extends StatelessWidget {
         ),
       );
     }
-    return Align(
-      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 3),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.75,
-        ),
-        decoration: BoxDecoration(
-          color: isMe ? AppColors.orange : AppColors.surfaceSecondary,
-          borderRadius: BorderRadius.circular(AppRadius.lg),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (!isMe)
-              Text(
+    final hasImage = message.imageUri != null && message.imageUri!.isNotEmpty;
+    final bubble = Container(
+      margin: const EdgeInsets.only(bottom: 2),
+      padding: hasImage
+          ? const EdgeInsets.all(4)
+          : const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.of(context).size.width * 0.72,
+      ),
+      decoration: BoxDecoration(
+        color: isMe ? AppColors.orange : AppColors.surfaceSecondary,
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (!isMe && showHeader)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 2, left: 2),
+              child: Text(
                 message.author?.displayName ?? '',
                 style: AppTextStyles.caption(color: AppColors.cyan),
               ),
-            Text(
-              message.body,
-              style: AppTextStyles.body(
-                color: isMe ? Colors.black : AppColors.textPrimary,
+            ),
+          if (hasImage)
+            ClipRRect(
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              child: CachedNetworkImage(
+                imageUrl: message.imageUri!,
+                fit: BoxFit.cover,
+                width: 220,
+                placeholder: (context, url) => const SizedBox(
+                  width: 220,
+                  height: 160,
+                  child: Center(child: CircularProgressIndicator()),
+                ),
               ),
             ),
-          ],
-        ),
+          if (message.body.isNotEmpty)
+            Padding(
+              padding: hasImage
+                  ? const EdgeInsets.fromLTRB(8, 6, 8, 4)
+                  : EdgeInsets.zero,
+              child: Text(
+                message.body,
+                style: AppTextStyles.body(
+                  color: isMe ? Colors.black : AppColors.textPrimary,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+
+    if (isMe) {
+      return Align(alignment: Alignment.centerRight, child: bubble);
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          SizedBox(
+            width: 32,
+            child: showHeader
+                ? MenzoAvatar(
+                    name: message.author?.displayName ?? '?',
+                    avatarUri: message.author?.avatarUri,
+                    gradient: gradientIdFromName(
+                      message.author?.avatarGradient,
+                    ),
+                    size: 28,
+                  )
+                : null,
+          ),
+          const SizedBox(width: 8),
+          Flexible(child: bubble),
+        ],
       ),
     );
   }

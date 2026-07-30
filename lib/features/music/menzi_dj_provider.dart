@@ -4,6 +4,8 @@ import 'dart:ui' show Color;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
+import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 
 import '../../core/network/api_exception.dart';
 import '../../core/network/stomp_service.dart';
@@ -67,7 +69,22 @@ class MenziDjNotifier extends Notifier<MenziDjState> {
   void Function(double seconds)? _pendingTimeRequest;
 
   WebViewController get controller {
-    return _controller ??= WebViewController()
+    if (_controller != null) return _controller!;
+    // Android's WebView bloquea por defecto cualquier reproducción de audio/video que no
+    // venga de un gesto real del usuario (`setMediaPlaybackRequiresUserGesture` es `true` por
+    // default) — como acá el `unMute()`/`play()` los dispara Dart vía el bridge JS (no un tap
+    // real sobre el WebView), Chromium los ignora en silencio: el player sigue "reproduciendo"
+    // (los eventos de estado llegan bien) pero nunca se escucha nada. Mismo problema en iOS con
+    // `mediaTypesRequiringUserActionForPlayback`.
+    late final PlatformWebViewControllerCreationParams params;
+    if (WebViewPlatform.instance is WebKitWebViewPlatform) {
+      params = WebKitWebViewControllerCreationParams(
+        mediaTypesRequiringUserAction: const <PlaybackMediaTypes>{},
+      );
+    } else {
+      params = const PlatformWebViewControllerCreationParams();
+    }
+    final controller = WebViewController.fromPlatformCreationParams(params)
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(const Color(0xFF000000))
       ..addJavaScriptChannel(
@@ -75,6 +92,11 @@ class MenziDjNotifier extends Notifier<MenziDjState> {
         onMessageReceived: _handleBridgeMessage,
       )
       ..loadHtmlString(menziDjPlayerHtml);
+    final platform = controller.platform;
+    if (platform is AndroidWebViewController) {
+      platform.setMediaPlaybackRequiresUserGesture(false);
+    }
+    return _controller = controller;
   }
 
   @override

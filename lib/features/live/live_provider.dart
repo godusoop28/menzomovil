@@ -1,6 +1,7 @@
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/native/background_audio_channel.dart';
 import '../../core/network/stomp_service.dart';
 import '../../core/providers/repository_providers.dart';
 import '../../data/models/live_models.dart';
@@ -16,6 +17,7 @@ class LiveState {
     this.watchedRoomId,
     this.viewingState,
     this.activeRoomId,
+    this.session,
     this.connected = false,
     this.connecting = false,
     this.myRole,
@@ -25,11 +27,13 @@ class LiveState {
     this.lastMicrophoneError,
     this.participants = const [],
     this.speakingLevels = const {},
+    this.speakingRequests = const [],
   });
 
   final String? watchedRoomId;
   final LiveSession? viewingState;
   final String? activeRoomId;
+  final LiveSession? session;
   final bool connected;
   final bool connecting;
   final LiveParticipantRole? myRole;
@@ -39,8 +43,12 @@ class LiveState {
   final String? lastMicrophoneError;
   final List<LiveParticipant> participants;
   final Map<String, double> speakingLevels;
+  final List<LiveParticipant> speakingRequests;
 
   bool get canSpeak => _speakingRoles.contains(myRole);
+  bool get canModerate =>
+      myRole == LiveParticipantRole.host ||
+      myRole == LiveParticipantRole.coHost;
 
   LiveState copyWith({
     String? watchedRoomId,
@@ -49,6 +57,8 @@ class LiveState {
     bool clearViewingState = false,
     String? activeRoomId,
     bool clearActiveRoomId = false,
+    LiveSession? session,
+    bool clearSession = false,
     bool? connected,
     bool? connecting,
     LiveParticipantRole? myRole,
@@ -60,6 +70,7 @@ class LiveState {
     bool clearLastMicrophoneError = false,
     List<LiveParticipant>? participants,
     Map<String, double>? speakingLevels,
+    List<LiveParticipant>? speakingRequests,
   }) => LiveState(
     watchedRoomId: clearWatchedRoomId
         ? null
@@ -70,6 +81,7 @@ class LiveState {
     activeRoomId: clearActiveRoomId
         ? null
         : (activeRoomId ?? this.activeRoomId),
+    session: clearSession ? null : (session ?? this.session),
     connected: connected ?? this.connected,
     connecting: connecting ?? this.connecting,
     myRole: clearMyRole ? null : (myRole ?? this.myRole),
@@ -81,6 +93,7 @@ class LiveState {
         : (lastMicrophoneError ?? this.lastMicrophoneError),
     participants: participants ?? this.participants,
     speakingLevels: speakingLevels ?? this.speakingLevels,
+    speakingRequests: speakingRequests ?? this.speakingRequests,
   );
 }
 
@@ -176,14 +189,20 @@ class LiveNotifier extends Notifier<LiveState> {
 
       state = state.copyWith(
         activeRoomId: roomId,
+        session: session,
         connected: true,
         connecting: false,
         myRole: session.myRole,
       );
       _subscribeLiveEvents(roomId);
       await refreshParticipants(roomId);
+      if (state.canModerate) await refreshSpeakingRequests(roomId);
 
       if (canSpeak) await _publishMic();
+      await BackgroundAudioChannel.start(
+        title: 'MENZO · en vivo',
+        text: 'Tu micrófono y Menzi DJ siguen activos en segundo plano',
+      );
     } catch (e) {
       state = state.copyWith(
         connecting: false,
@@ -301,6 +320,58 @@ class LiveNotifier extends Notifier<LiveState> {
     state = state.copyWith(participants: list);
   }
 
+  Future<void> refreshSpeakingRequests(String roomId) async {
+    try {
+      final list = await ref
+          .read(liveRepositoryProvider)
+          .speakingRequests(roomId);
+      state = state.copyWith(speakingRequests: list);
+    } catch (_) {}
+  }
+
+  Future<void> approveSpeaking(String roomId, String userId) async {
+    await ref.read(liveRepositoryProvider).approveSpeaking(roomId, userId);
+    await Future.wait([
+      refreshParticipants(roomId),
+      refreshSpeakingRequests(roomId),
+    ]);
+  }
+
+  Future<void> rejectSpeaking(String roomId, String userId) async {
+    await ref.read(liveRepositoryProvider).rejectSpeaking(roomId, userId);
+    await Future.wait([
+      refreshParticipants(roomId),
+      refreshSpeakingRequests(roomId),
+    ]);
+  }
+
+  Future<void> demoteParticipant(String roomId, String userId) async {
+    await ref.read(liveRepositoryProvider).demoteParticipant(roomId, userId);
+    await refreshParticipants(roomId);
+  }
+
+  Future<void> muteParticipant(String roomId, String userId) async {
+    await ref.read(liveRepositoryProvider).muteParticipant(roomId, userId);
+    await refreshParticipants(roomId);
+  }
+
+  Future<void> removeParticipant(String roomId, String userId) async {
+    await ref.read(liveRepositoryProvider).removeParticipant(roomId, userId);
+    await refreshParticipants(roomId);
+  }
+
+  Future<void> updateAnnouncement(String roomId, String announcement) async {
+    final session = await ref.read(liveRepositoryProvider).update(roomId, {
+      'announcement': announcement,
+    });
+    state = state.copyWith(session: session);
+  }
+
+  Future<void> endLiveForAll(String roomId) async {
+    await ref.read(liveRepositoryProvider).end(roomId);
+    await leave();
+  }
+
   void _subscribeLiveEvents(String roomId) {
     final channel = StompChannel();
     _liveChannel = channel;
@@ -309,10 +380,11 @@ class LiveNotifier extends Notifier<LiveState> {
         channel.subscribe('/topic/rooms/$roomId/live', (payload) {
           final type = payload['type'] as String?;
           if (type == 'CHAT_LIVE_ENDED') {
-            state = state.copyWith(participants: const []);
+            leave();
             return;
           }
           refreshParticipants(roomId);
+          if (state.canModerate) refreshSpeakingRequests(roomId);
           final myPayloadUser =
               (payload['payload'] as Map<String, dynamic>?)?['user']
                   as Map<String, dynamic>?;
@@ -323,6 +395,30 @@ class LiveNotifier extends Notifier<LiveState> {
               (type == 'CHAT_LIVE_PARTICIPANT_DEMOTED' ||
                   type == 'CHAT_LIVE_SPEAKING_REJECTED')) {
             becomeAudience();
+          } else if (type == 'CHAT_LIVE_ANNOUNCEMENT_UPDATED') {
+            final announcement = payload['payload'] is Map<String, dynamic>
+                ? (payload['payload'] as Map<String, dynamic>)['announcement']
+                      as String?
+                : null;
+            final current = state.session;
+            if (current != null) {
+              state = state.copyWith(
+                session: LiveSession(
+                  id: current.id,
+                  roomId: current.roomId,
+                  status: current.status,
+                  title: current.title,
+                  description: current.description,
+                  announcement: announcement,
+                  startedAt: current.startedAt,
+                  participantCount: current.participantCount,
+                  speakerCount: current.speakerCount,
+                  myRole: current.myRole,
+                  myMicrophoneEnabled: current.myMicrophoneEnabled,
+                  hasPendingSpeakRequest: current.hasPendingSpeakRequest,
+                ),
+              );
+            }
           }
         });
       },
@@ -333,6 +429,7 @@ class LiveNotifier extends Notifier<LiveState> {
     final roomId = state.activeRoomId;
     await _cleanupEngine();
     state = const LiveState();
+    await BackgroundAudioChannel.stop();
     if (roomId != null) {
       await ref.read(liveRepositoryProvider).leave(roomId).catchError((_) {});
     }
