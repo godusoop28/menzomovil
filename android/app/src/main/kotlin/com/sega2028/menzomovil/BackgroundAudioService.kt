@@ -5,10 +5,12 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 
@@ -43,6 +45,31 @@ class BackgroundAudioService : Service() {
     }
 
     private var currentMode: String = MODE_LISTEN
+    private var wakeLock: PowerManager.WakeLock? = null
+
+    /**
+     * Un `PARTIAL_WAKE_LOCK` deja la pantalla apagarse pero mantiene la CPU corriendo — sin
+     * esto, Doze/App Standby puede congelar los timers del WebView (JS de Menzi DJ) y el hilo
+     * de audio de Agora poco después de apagar la pantalla con la app en segundo plano, aunque
+     * el foreground service siga técnicamente "vivo". Se toma/suelta junto con el ciclo de vida
+     * del servicio, nunca fuera de él.
+     */
+    private fun acquireWakeLock() {
+        if (wakeLock?.isHeld == true) return
+        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+        val lock = pm.newWakeLock(
+            PowerManager.PARTIAL_WAKE_LOCK,
+            "menzomovil:live_audio",
+        )
+        lock.setReferenceCounted(false)
+        lock.acquire(4 * 60 * 60 * 1000L) // tope de 4h de seguridad, no debería durar tanto
+        wakeLock = lock
+    }
+
+    private fun releaseWakeLock() {
+        wakeLock?.let { if (it.isHeld) it.release() }
+        wakeLock = null
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent == null) {
@@ -61,6 +88,7 @@ class BackgroundAudioService : Service() {
 
         try {
             startForeground(NOTIFICATION_ID, buildNotification(title, text), foregroundType(mode))
+            acquireWakeLock()
         } catch (e: SecurityException) {
             Log.w(TAG, "startForeground con modo '$mode' rechazado, degradando a listen", e)
             currentMode = MODE_LISTEN
@@ -70,6 +98,7 @@ class BackgroundAudioService : Service() {
                     buildNotification(title, text),
                     foregroundType(MODE_LISTEN),
                 )
+                acquireWakeLock()
             } catch (e2: SecurityException) {
                 Log.e(TAG, "startForeground falló incluso en modo listen, deteniendo servicio", e2)
                 stopSelf()
@@ -125,6 +154,7 @@ class BackgroundAudioService : Service() {
     }
 
     override fun onDestroy() {
+        releaseWakeLock()
         super.onDestroy()
         currentMode = MODE_LISTEN
     }
