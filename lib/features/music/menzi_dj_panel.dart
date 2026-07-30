@@ -233,11 +233,7 @@ class _PlayerErrorBanner extends ConsumerWidget {
         children: [
           Row(
             children: [
-              const Icon(
-                Icons.error_outline,
-                size: 18,
-                color: AppColors.coral,
-              ),
+              const Icon(Icons.error_outline, size: 18, color: AppColors.coral),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -254,7 +250,9 @@ class _PlayerErrorBanner extends ConsumerWidget {
             children: [
               OutlinedButton.icon(
                 onPressed: () async {
-                  final url = ref.read(menziDjProvider.notifier).currentYoutubeUrl;
+                  final url = ref
+                      .read(menziDjProvider.notifier)
+                      .currentYoutubeUrl;
                   if (url == null) return;
                   await launchUrl(
                     Uri.parse(url),

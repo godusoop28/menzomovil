@@ -432,8 +432,7 @@ class _StageSlot extends StatelessWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
-        if (micOff)
-          const Icon(Icons.mic_off, size: 14, color: AppColors.coral),
+        if (micOff) const Icon(Icons.mic_off, size: 14, color: AppColors.coral),
       ],
     );
   }
@@ -477,49 +476,57 @@ class _LiveControls extends ConsumerWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               if (live.canSpeak)
-            IconButton(
-              iconSize: 26,
-              onPressed: live.microphoneChanging
-                  ? null
-                  : () => ref.read(liveProvider.notifier).toggleMute(),
-              icon: Icon(
-                micLooksOff ? Icons.mic_off : Icons.mic,
-                color: micLooksOff ? AppColors.coral : AppColors.textPrimary,
-              ),
-              style: IconButton.styleFrom(
-                backgroundColor: AppColors.surfaceSecondary,
-                padding: const EdgeInsets.all(14),
-              ),
-            )
-          else if (live.myRole == LiveParticipantRole.audience)
-            TextButton.icon(
-              onPressed: () async {
-                try {
-                  await ref.read(liveProvider.notifier).requestToSpeak(room.id);
-                  if (context.mounted)
-                    showMenzoToast(context, 'Solicitud enviada.');
-                } catch (_) {
-                  if (context.mounted)
-                    showMenzoToast(context, 'No pudimos enviar tu solicitud.');
-                }
-              },
-              icon: const Icon(Icons.back_hand_outlined, size: 16),
-              label: const Text('Solicitar hablar'),
-              style: TextButton.styleFrom(
-                backgroundColor: AppColors.surfaceSecondary,
-                foregroundColor: AppColors.textPrimary,
-              ),
-            )
-          else if (live.myRole == LiveParticipantRole.requested)
-            TextButton(
-              onPressed: () =>
-                  ref.read(liveProvider.notifier).cancelSpeakRequest(room.id),
-              style: TextButton.styleFrom(
-                backgroundColor: AppColors.surfaceSecondary,
-                foregroundColor: AppColors.textPrimary,
-              ),
-              child: const Text('Solicitud enviada · Cancelar'),
-            ),
+                IconButton(
+                  iconSize: 26,
+                  onPressed: live.microphoneChanging
+                      ? null
+                      : () => ref.read(liveProvider.notifier).toggleMute(),
+                  icon: Icon(
+                    micLooksOff ? Icons.mic_off : Icons.mic,
+                    color: micLooksOff
+                        ? AppColors.coral
+                        : AppColors.textPrimary,
+                  ),
+                  style: IconButton.styleFrom(
+                    backgroundColor: AppColors.surfaceSecondary,
+                    padding: const EdgeInsets.all(14),
+                  ),
+                )
+              else if (live.myRole == LiveParticipantRole.audience)
+                TextButton.icon(
+                  onPressed: () async {
+                    try {
+                      await ref
+                          .read(liveProvider.notifier)
+                          .requestToSpeak(room.id);
+                      if (context.mounted)
+                        showMenzoToast(context, 'Solicitud enviada.');
+                    } catch (_) {
+                      if (context.mounted)
+                        showMenzoToast(
+                          context,
+                          'No pudimos enviar tu solicitud.',
+                        );
+                    }
+                  },
+                  icon: const Icon(Icons.back_hand_outlined, size: 16),
+                  label: const Text('Solicitar hablar'),
+                  style: TextButton.styleFrom(
+                    backgroundColor: AppColors.surfaceSecondary,
+                    foregroundColor: AppColors.textPrimary,
+                  ),
+                )
+              else if (live.myRole == LiveParticipantRole.requested)
+                TextButton(
+                  onPressed: () => ref
+                      .read(liveProvider.notifier)
+                      .cancelSpeakRequest(room.id),
+                  style: TextButton.styleFrom(
+                    backgroundColor: AppColors.surfaceSecondary,
+                    foregroundColor: AppColors.textPrimary,
+                  ),
+                  child: const Text('Solicitud enviada · Cancelar'),
+                ),
               const SizedBox(width: 12),
               IconButton(
                 iconSize: 26,

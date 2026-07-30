@@ -36,7 +36,10 @@ class LiveBubbleChannel {
     } catch (_) {}
   }
 
-  static Future<bool> show({required bool canSpeak, required bool muted}) async {
+  static Future<bool> show({
+    required bool canSpeak,
+    required bool muted,
+  }) async {
     if (!Platform.isAndroid) return false;
     try {
       return await _method.invokeMethod<bool>('show', {

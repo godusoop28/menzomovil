@@ -12,7 +12,8 @@
 /// origen opaco tipo `about:blank`) es la causa exacta de "Error 153 — Error de configuración
 /// del reproductor de video" de YouTube: el iframe embed rechaza pedidos sin un origen válido,
 /// incluso para videos perfectamente reproducibles en youtube.com.
-String menziDjPlayerHtml(String origin) => '''<!DOCTYPE html>
+String menziDjPlayerHtml(String origin) =>
+    '''<!DOCTYPE html>
 <html>
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />

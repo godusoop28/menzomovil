@@ -31,7 +31,8 @@ class LiveBubbleController with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     final live = ref.read(liveProvider);
-    if (state == AppLifecycleState.paused || state == AppLifecycleState.hidden) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
       _backgrounded = true;
       if (live.connected) _maybeShowBubble(live);
     } else if (state == AppLifecycleState.resumed) {
@@ -47,7 +48,8 @@ class LiveBubbleController with WidgetsBindingObserver {
     // aceptó antes: pudo revocarlo desde Ajustes del sistema entre una vez y la otra.
     final granted = await LiveBubbleChannel.checkPermission();
     if (!granted) return;
-    if (!_backgrounded) return; // volvió a primer plano mientras se resolvían los futures
+    if (!_backgrounded)
+      return; // volvió a primer plano mientras se resolvían los futures
     await LiveBubbleChannel.show(
       canSpeak: live.canSpeak,
       muted: live.muted || !live.localAudioPublished,
