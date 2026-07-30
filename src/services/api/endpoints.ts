@@ -1,5 +1,6 @@
 import { apiFetch } from './client';
 import type {
+  AddQueueItemRequest,
   AuraDto,
   AuthResponseDto,
   BadgeDto,
@@ -12,28 +13,41 @@ import type {
   CreateRoomRequest,
   EventDto,
   InterestDto,
+  LiveParticipantDto,
+  LiveSessionDto,
+  LiveTokenDto,
   LoginRequest,
   MessageDto,
   ModerationActionRequest,
+  MusicSessionDto,
+  MusicSettingsRequest,
   NotificationDto,
   OnboardingRequest,
   PageResponse,
   PostDto,
+  QueueItemDto,
   RecentlyViewedDto,
   RefreshRequest,
   RegisterRequest,
+  ReorderQueueRequest,
+  RequestSongRequest,
   RoomMemberDto,
+  SeekRequest,
   SendMessageRequest,
   SettingsDto,
+  StartLiveRequest,
+  UpdateLiveRequest,
   UpdateProfileRequest,
   UpdateRoomRequest,
   UpdateSettingsRequest,
   UploadResponseDto,
   UserProfileDto,
+  VersionedRequest,
   VoiceParticipantsDto,
   VoiceTokenDto,
   WallCommentDto,
   WallMessageDto,
+  YoutubeSearchResultDto,
 } from './types';
 
 function qs(params: Record<string, string | number | undefined>) {
@@ -149,11 +163,79 @@ export const chatApi = {
     apiFetch<void>(`/api/chat/rooms/${id}/members/${userId}/invite`, { method: 'POST' }),
 };
 
+/** Endpoints viejos, sin roles — se mantienen intactos porque son los que ya usaba esta app.
+ * `liveApi`/`musicApi` de abajo son el sistema nuevo (con roles HOST/CO_HOST/SPEAKER/AUDIENCE) que
+ * reemplaza este flujo en VoiceRoomContext; se dejan estos por si algo más los referenciara. */
 export const voiceApi = {
   getToken: (roomId: string) => apiFetch<VoiceTokenDto>(`/api/chat/rooms/${roomId}/voice/token`, { method: 'POST' }),
   join: (roomId: string) => apiFetch<VoiceParticipantsDto>(`/api/chat/rooms/${roomId}/voice/join`, { method: 'POST' }),
   leave: (roomId: string) => apiFetch<VoiceParticipantsDto>(`/api/chat/rooms/${roomId}/voice/leave`, { method: 'POST' }),
   participants: (roomId: string) => apiFetch<VoiceParticipantsDto>(`/api/chat/rooms/${roomId}/voice/participants`),
+};
+
+export const liveApi = {
+  state: (roomId: string) => apiFetch<LiveSessionDto | undefined>(`/api/chat/rooms/${roomId}/live`),
+  start: (roomId: string, body?: StartLiveRequest) =>
+    apiFetch<LiveSessionDto>(`/api/chat/rooms/${roomId}/live/start`, { method: 'POST', body }),
+  end: (roomId: string) => apiFetch<void>(`/api/chat/rooms/${roomId}/live/end`, { method: 'POST' }),
+  update: (roomId: string, body: UpdateLiveRequest) =>
+    apiFetch<LiveSessionDto>(`/api/chat/rooms/${roomId}/live`, { method: 'PATCH', body }),
+  join: (roomId: string) => apiFetch<LiveSessionDto>(`/api/chat/rooms/${roomId}/live/join`, { method: 'POST' }),
+  leave: (roomId: string) => apiFetch<void>(`/api/chat/rooms/${roomId}/live/leave`, { method: 'POST' }),
+  token: (roomId: string) => apiFetch<LiveTokenDto>(`/api/chat/rooms/${roomId}/live/token`),
+  participants: (roomId: string) => apiFetch<LiveParticipantDto[]>(`/api/chat/rooms/${roomId}/live/participants`),
+  setMicrophone: (roomId: string, enabled: boolean) =>
+    apiFetch<void>(`/api/chat/rooms/${roomId}/live/microphone`, { method: 'POST', body: { enabled } }),
+  requestToSpeak: (roomId: string) =>
+    apiFetch<void>(`/api/chat/rooms/${roomId}/live/speaking-requests`, { method: 'POST' }),
+  cancelSpeakRequest: (roomId: string) =>
+    apiFetch<void>(`/api/chat/rooms/${roomId}/live/speaking-requests/cancel`, { method: 'POST' }),
+  speakingRequests: (roomId: string) =>
+    apiFetch<LiveParticipantDto[]>(`/api/chat/rooms/${roomId}/live/speaking-requests`),
+  approveSpeaking: (roomId: string, userId: string) =>
+    apiFetch<void>(`/api/chat/rooms/${roomId}/live/speaking-requests/${userId}/approve`, { method: 'POST' }),
+  rejectSpeaking: (roomId: string, userId: string) =>
+    apiFetch<void>(`/api/chat/rooms/${roomId}/live/speaking-requests/${userId}/reject`, { method: 'POST' }),
+  demoteParticipant: (roomId: string, userId: string) =>
+    apiFetch<void>(`/api/chat/rooms/${roomId}/live/participants/${userId}/demote`, { method: 'POST' }),
+  muteParticipant: (roomId: string, userId: string) =>
+    apiFetch<void>(`/api/chat/rooms/${roomId}/live/participants/${userId}/mute`, { method: 'POST' }),
+  removeParticipant: (roomId: string, userId: string) =>
+    apiFetch<void>(`/api/chat/rooms/${roomId}/live/participants/${userId}`, { method: 'DELETE' }),
+};
+
+export const musicApi = {
+  snapshot: (roomId: string) => apiFetch<MusicSessionDto>(`/api/chat/rooms/${roomId}/live/music`),
+  search: (roomId: string, q: string) =>
+    apiFetch<YoutubeSearchResultDto[]>(`/api/chat/rooms/${roomId}/live/music/search${qs({ q })}`),
+  queue: (roomId: string) => apiFetch<QueueItemDto[]>(`/api/chat/rooms/${roomId}/live/music/queue`),
+  addToQueue: (roomId: string, body: AddQueueItemRequest) =>
+    apiFetch<MusicSessionDto>(`/api/chat/rooms/${roomId}/live/music/queue`, { method: 'POST', body }),
+  requestSong: (roomId: string, body: RequestSongRequest) =>
+    apiFetch<void>(`/api/chat/rooms/${roomId}/live/music/requests`, { method: 'POST', body }),
+  approveRequest: (roomId: string, requestId: string) =>
+    apiFetch<void>(`/api/chat/rooms/${roomId}/live/music/requests/${requestId}/approve`, { method: 'POST' }),
+  rejectRequest: (roomId: string, requestId: string) =>
+    apiFetch<void>(`/api/chat/rooms/${roomId}/live/music/requests/${requestId}/reject`, { method: 'POST' }),
+  play: (roomId: string, body?: VersionedRequest) =>
+    apiFetch<MusicSessionDto>(`/api/chat/rooms/${roomId}/live/music/play`, { method: 'POST', body }),
+  pause: (roomId: string, body?: VersionedRequest) =>
+    apiFetch<MusicSessionDto>(`/api/chat/rooms/${roomId}/live/music/pause`, { method: 'POST', body }),
+  resume: (roomId: string, body?: VersionedRequest) =>
+    apiFetch<MusicSessionDto>(`/api/chat/rooms/${roomId}/live/music/resume`, { method: 'POST', body }),
+  seek: (roomId: string, body: SeekRequest) =>
+    apiFetch<MusicSessionDto>(`/api/chat/rooms/${roomId}/live/music/seek`, { method: 'POST', body }),
+  skip: (roomId: string, body?: VersionedRequest) =>
+    apiFetch<MusicSessionDto>(`/api/chat/rooms/${roomId}/live/music/skip`, { method: 'POST', body }),
+  stop: (roomId: string, body?: VersionedRequest) =>
+    apiFetch<MusicSessionDto>(`/api/chat/rooms/${roomId}/live/music/stop`, { method: 'POST', body }),
+  updateSettings: (roomId: string, body: MusicSettingsRequest) =>
+    apiFetch<MusicSessionDto>(`/api/chat/rooms/${roomId}/live/music/settings`, { method: 'PATCH', body }),
+  reorderQueue: (roomId: string, body: ReorderQueueRequest) =>
+    apiFetch<MusicSessionDto>(`/api/chat/rooms/${roomId}/live/music/queue/reorder`, { method: 'PATCH', body }),
+  removeQueueItem: (roomId: string, queueItemId: string) =>
+    apiFetch<void>(`/api/chat/rooms/${roomId}/live/music/queue/${queueItemId}`, { method: 'DELETE' }),
+  clearQueue: (roomId: string) => apiFetch<void>(`/api/chat/rooms/${roomId}/live/music/queue`, { method: 'DELETE' }),
 };
 
 export const communityApi = {

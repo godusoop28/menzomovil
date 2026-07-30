@@ -263,6 +263,91 @@ export function mapEvent(dto: EventDto): CommunityEvent {
   };
 }
 
+export function mapLiveParticipant(
+  dto: import('./types').LiveParticipantDto,
+  myRealId: string | null
+): import('@/types').LiveParticipant | null {
+  if (!dto.user) return null;
+  return {
+    user: mapUserSummary(dto.user, myRealId),
+    role: dto.role.toLowerCase() as import('@/types').LiveParticipantRole,
+    microphoneEnabled: dto.microphoneEnabled,
+    requestedToSpeakAt: dto.requestedToSpeakAt,
+    joinedAt: dto.joinedAt,
+    speakingLevel: 0,
+  };
+}
+
+export function mapLiveSession(dto: import('./types').LiveSessionDto): import('@/types').LiveSessionSummary {
+  return {
+    id: dto.id,
+    roomId: dto.roomId,
+    status: dto.status === 'ACTIVE' ? 'active' : 'ended',
+    title: dto.title,
+    description: dto.description,
+    announcement: dto.announcement,
+    startedByUserId: dto.startedByUserId,
+    startedAt: dto.startedAt,
+    participantCount: dto.participantCount,
+    speakerCount: dto.speakerCount,
+    myRole: dto.myRole ? (dto.myRole.toLowerCase() as import('@/types').LiveParticipantRole) : null,
+    myMicrophoneEnabled: dto.myMicrophoneEnabled,
+    hasPendingSpeakRequest: dto.hasPendingSpeakRequest,
+  };
+}
+
+export function mapQueueItem(dto: import('./types').QueueItemDto, myRealId: string | null): import('@/types').QueueItem {
+  return {
+    id: dto.id,
+    videoId: dto.videoId,
+    title: dto.title ?? '',
+    channelTitle: dto.channelTitle ?? '',
+    thumbnailUrl: dto.thumbnailUrl,
+    durationSeconds: dto.durationSeconds,
+    requestedBy: dto.requestedBy ? mapUserSummary(dto.requestedBy, myRealId) : null,
+    approvedBy: dto.approvedBy ? mapUserSummary(dto.approvedBy, myRealId) : null,
+    position: dto.position,
+    status: dto.status.toLowerCase() as import('@/types').QueueItemStatus,
+    createdAt: dto.createdAt,
+  };
+}
+
+export function mapMusicSession(
+  dto: import('./types').MusicSessionDto,
+  myRealId: string | null
+): import('@/types').MusicSessionSummary {
+  return {
+    musicSessionId: dto.musicSessionId,
+    roomId: dto.roomId,
+    liveSessionId: dto.liveSessionId,
+    status: dto.status.toLowerCase() as import('@/types').MusicSessionSummary['status'],
+    currentQueueItemId: dto.currentQueueItemId,
+    currentVideoId: dto.currentVideoId,
+    currentTitle: dto.currentTitle,
+    currentChannelTitle: dto.currentChannelTitle,
+    currentThumbnailUrl: dto.currentThumbnailUrl,
+    durationSeconds: dto.durationSeconds,
+    positionSeconds: dto.positionSeconds,
+    allowRequests: dto.allowRequests,
+    version: dto.version,
+    queue: dto.queue.map((q) => mapQueueItem(q, myRealId)),
+    pendingRequests: dto.pendingRequests.map((q) => mapQueueItem(q, myRealId)),
+    history: dto.history.map((q) => mapQueueItem(q, myRealId)),
+  };
+}
+
+export function mapYoutubeSearchResult(dto: import('./types').YoutubeSearchResultDto): import('@/types').YoutubeSearchResult {
+  return {
+    videoId: dto.videoId,
+    title: dto.title,
+    channelTitle: dto.channelTitle,
+    thumbnailUrl: dto.thumbnailUrl,
+    durationSeconds: dto.durationSeconds,
+    embeddable: dto.embeddable,
+    live: dto.live,
+  };
+}
+
 export function mapNotification(dto: NotificationDto, myRealId: string | null): Notification {
   return {
     id: dto.id,

@@ -23,6 +23,7 @@ import { TypingBubble } from '@/components/TypingBubble';
 import { MenzoImageBackground } from '@/components/common/MenzoImageBackground';
 import { EmptyState } from '@/components/EmptyState';
 import { IconButton } from '@/components/IconButton';
+import { MenziDjPanel } from '@/components/music/MenziDjPanel';
 import { ScreenContainer } from '@/components/ScreenContainer';
 import { VoiceAvatarBubble } from '@/components/VoiceAvatarBubble';
 import { menzoAssets } from '@/constants/assets';
@@ -55,11 +56,18 @@ export default function ChatDetailScreen() {
     connecting: voiceCtx.connecting && isThisRoomLive,
     muted: voiceCtx.muted,
     permissionDenied: voiceCtx.permissionDenied,
+    lastMicrophoneError: voiceCtx.lastMicrophoneError,
+    myRole: isThisRoomLive ? voiceCtx.myRole : null,
+    canSpeak: isThisRoomLive && voiceCtx.canSpeak,
+    microphoneChanging: voiceCtx.microphoneChanging,
+    localAudioPublished: voiceCtx.localAudioPublished,
     participants: isThisRoomLive ? voiceCtx.participants : [],
     speakingLevels: isThisRoomLive ? voiceCtx.speakingLevels : new Map<string, number>(),
     join: () => (id ? voiceCtx.join(id) : Promise.resolve()),
     leave: voiceCtx.leave,
     toggleMute: voiceCtx.toggleMute,
+    requestToSpeak: voiceCtx.requestToSpeak,
+    cancelSpeakRequest: voiceCtx.cancelSpeakRequest,
   };
   const behavior = useKeyboardBehavior();
   const listRef = useRef<FlatList<Message>>(null);
@@ -71,6 +79,7 @@ export default function ChatDetailScreen() {
   const isNearBottomRef = useRef(true);
   const prevMessageCountRef = useRef(0);
   const [showNewMessagesPill, setShowNewMessagesPill] = useState(false);
+  const [showMenziDj, setShowMenziDj] = useState(false);
 
   const room = findRoom(state.social, id);
   const isDirect = room?.type === 'direct';
@@ -160,12 +169,12 @@ export default function ChatDetailScreen() {
     setRefreshing(false);
   }, [actions, id]);
 
+  // Única fuente de errores de micrófono (ver VoiceRoomContext) — cualquier falla, sea al
+  // publicar el track o al alternar mute, termina acá como un toast legible.
   useEffect(() => {
-    if (voice.permissionDenied) {
-      showToast('Necesitamos acceso al micrófono para unirte a la voz.');
-    }
+    if (voice.lastMicrophoneError) showToast(voice.lastMicrophoneError);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [voice.permissionDenied]);
+  }, [voice.lastMicrophoneError]);
 
   const headerTitle = isDirect ? room?.peer?.displayName ?? 'Conversación' : room?.name ?? 'Conversación';
   const headerOnline = isDirect ? !!room?.peer?.isOnline : !!room && room.onlineCount > 0;
@@ -372,6 +381,15 @@ export default function ChatDetailScreen() {
             style={styles.headerIconButton}>
             {busyBackground ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Ionicons name="color-palette-outline" size={16} color="#FFFFFF" />}
           </Pressable>
+          {voice.connected && (
+            <Pressable
+              onPress={() => setShowMenziDj(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Música con Menzi DJ"
+              style={styles.headerIconButton}>
+              <Ionicons name="musical-notes-outline" size={16} color="#FFFFFF" />
+            </Pressable>
+          )}
           <Pressable
             onPress={voice.connected ? voice.leave : voice.join}
             disabled={voice.connecting}
@@ -398,29 +416,61 @@ export default function ChatDetailScreen() {
               <Text style={styles.voiceBarEmpty}>Nadie en la voz todavía</Text>
             ) : (
               voice.participants.map((p) => (
-                <View key={p.id} style={styles.voiceChip}>
+                <View key={p.user.id} style={styles.voiceChip}>
                   <VoiceAvatarBubble
-                    name={p.displayName}
-                    avatarUri={p.avatarUri}
-                    gradient={p.avatarGradient}
+                    name={p.user.displayName}
+                    avatarUri={p.user.avatarUri}
+                    gradient={p.user.avatarGradient}
                     size={32}
-                    level={voice.speakingLevels.get(p.id) ?? 0}
+                    level={voice.speakingLevels.get(p.user.id) ?? 0}
                     accentColor={accent.color}
                   />
                   <Text style={styles.voiceChipLabel} numberOfLines={1}>
-                    {p.displayName}
+                    {p.user.displayName}
                   </Text>
                 </View>
               ))
             )}
           </View>
-          {voice.connected && (
+          {/* Solo HOST/CO_HOST/SPEAKER ven el micrófono — AUDIENCE nunca lo ve (no publica audio
+              ni se le pide permiso solo para escuchar, ver sección 19 del pedido). */}
+          {voice.connected && voice.canSpeak && (
             <Pressable
               onPress={voice.toggleMute}
+              disabled={voice.microphoneChanging}
               accessibilityRole="button"
-              accessibilityLabel={voice.muted ? 'Activar micrófono' : 'Silenciar micrófono'}
-              style={[styles.muteButton, voice.muted && styles.muteButtonActive]}>
-              <Ionicons name={voice.muted ? 'mic-off' : 'mic'} size={16} color={voice.muted ? Colors.coral : Colors.textPrimary} />
+              accessibilityLabel={
+                !voice.localAudioPublished ? 'Reintentar micrófono' : voice.muted ? 'Activar micrófono' : 'Silenciar micrófono'
+              }
+              style={[
+                styles.muteButton,
+                (voice.muted || !voice.localAudioPublished) && styles.muteButtonActive,
+                voice.microphoneChanging && styles.muteButtonBusy,
+              ]}>
+              <Ionicons
+                name={voice.muted || !voice.localAudioPublished ? 'mic-off' : 'mic'}
+                size={16}
+                color={voice.muted || !voice.localAudioPublished ? Colors.coral : Colors.textPrimary}
+              />
+            </Pressable>
+          )}
+          {voice.connected && voice.myRole === 'audience' && (
+            <Pressable
+              onPress={() => voice.requestToSpeak().catch(() => showToast('No pudimos enviar tu solicitud.'))}
+              accessibilityRole="button"
+              accessibilityLabel="Solicitar hablar"
+              style={styles.requestSpeakButton}>
+              <Ionicons name="hand-left-outline" size={14} color={Colors.textPrimary} />
+              <Text style={styles.requestSpeakLabel}>Solicitar hablar</Text>
+            </Pressable>
+          )}
+          {voice.connected && voice.myRole === 'requested' && (
+            <Pressable
+              onPress={() => voice.cancelSpeakRequest().catch(() => {})}
+              accessibilityRole="button"
+              accessibilityLabel="Cancelar solicitud para hablar"
+              style={styles.requestSpeakButton}>
+              <Text style={styles.requestSpeakLabel}>Solicitud enviada · Cancelar</Text>
             </Pressable>
           )}
         </View>
@@ -481,6 +531,8 @@ export default function ChatDetailScreen() {
           </Pressable>
         </View>
       </KeyboardAvoidingView>
+
+      <MenziDjPanel visible={showMenziDj} roomRole={room.role} onClose={() => setShowMenziDj(false)} />
     </ScreenContainer>
   );
 }
@@ -575,6 +627,17 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surfaceSecondary,
   },
   muteButtonActive: { backgroundColor: 'rgba(251,113,133,0.15)' },
+  muteButtonBusy: { opacity: 0.6 },
+  requestSpeakButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    height: 32,
+    paddingHorizontal: 10,
+    borderRadius: 16,
+    backgroundColor: Colors.surfaceSecondary,
+  },
+  requestSpeakLabel: { ...Typography.caption, fontSize: 11, fontWeight: '600', color: Colors.textPrimary },
   list: { padding: Spacing.lg, gap: Spacing.sm },
   messagesArea: { flex: 1, position: 'relative' },
   newMessagesPillWrap: {

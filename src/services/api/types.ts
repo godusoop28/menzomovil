@@ -313,3 +313,120 @@ export type NotificationDto = {
 
 export type RecentlyViewedDto = { kind: ActivityKind; id: string; viewedAt: string };
 export type UploadResponseDto = { url: string };
+
+// ---- LIVE moderado (roles HOST/CO_HOST/SPEAKER/AUDIENCE/REQUESTED) -----------------------------
+// Aditivo sobre /voice/* (arriba) — ese endpoint sigue exactamente igual, no se toca. Este es el
+// mismo sistema con roles que ya usa menzoweb (ver LiveService en menzoapi).
+
+export type LiveParticipantRole = 'HOST' | 'CO_HOST' | 'SPEAKER' | 'AUDIENCE' | 'REQUESTED';
+
+export type LiveSessionDto = {
+  id: string;
+  roomId: string;
+  type: string;
+  status: 'ACTIVE' | 'ENDED';
+  title: string | null;
+  description: string | null;
+  announcement: string | null;
+  startedByUserId: string | null;
+  startedAt: string;
+  participantCount: number;
+  speakerCount: number;
+  agoraChannelName: string;
+  myRole: LiveParticipantRole | null;
+  myMicrophoneEnabled: boolean;
+  hasPendingSpeakRequest: boolean;
+};
+
+export type LiveParticipantDto = {
+  user: UserSummaryDto | null;
+  role: LiveParticipantRole;
+  microphoneEnabled: boolean;
+  requestedToSpeakAt: string | null;
+  joinedAt: string;
+};
+
+export type LiveTokenDto = { appId: string; channelName: string; token: string; uid: string; role: 'PUBLISHER' | 'SUBSCRIBER' };
+
+export type StartLiveRequest = { title?: string; description?: string; announcement?: string };
+export type UpdateLiveRequest = { title?: string; description?: string; announcement?: string };
+
+export type LiveEventType =
+  | 'CHAT_LIVE_STARTED'
+  | 'CHAT_LIVE_ENDED'
+  | 'CHAT_LIVE_UPDATED'
+  | 'CHAT_LIVE_PARTICIPANT_JOINED'
+  | 'CHAT_LIVE_PARTICIPANT_LEFT'
+  | 'CHAT_LIVE_SPEAKING_REQUESTED'
+  | 'CHAT_LIVE_SPEAKING_APPROVED'
+  | 'CHAT_LIVE_SPEAKING_REJECTED'
+  | 'CHAT_LIVE_PARTICIPANT_PROMOTED'
+  | 'CHAT_LIVE_PARTICIPANT_DEMOTED'
+  | 'CHAT_LIVE_MICROPHONE_CHANGED'
+  | 'CHAT_ROOM_UPDATED'
+  | 'CHAT_ROOM_APPEARANCE_UPDATED';
+
+export type LiveEventDto<TPayload = unknown> = {
+  eventId: string;
+  type: LiveEventType;
+  roomId: string;
+  liveSessionId: string | null;
+  occurredAt: string;
+  payload: TPayload;
+};
+
+// ---- Menzi DJ (música sincronizada del LIVE, YouTube) -----------------------------------------
+
+export type YoutubeSearchResultDto = {
+  videoId: string;
+  title: string;
+  channelTitle: string;
+  thumbnailUrl: string | null;
+  durationSeconds: number | null;
+  embeddable: boolean;
+  live: boolean;
+};
+
+export type QueueItemStatus = 'PENDING' | 'QUEUED' | 'PLAYING' | 'PLAYED' | 'SKIPPED' | 'REJECTED' | 'REMOVED';
+
+export type QueueItemDto = {
+  id: string;
+  videoId: string;
+  title: string | null;
+  channelTitle: string | null;
+  thumbnailUrl: string | null;
+  durationSeconds: number | null;
+  requestedBy: UserSummaryDto | null;
+  approvedBy: UserSummaryDto | null;
+  position: number | null;
+  status: QueueItemStatus;
+  createdAt: string;
+};
+
+export type MusicSessionStatus = 'IDLE' | 'PLAYING' | 'PAUSED' | 'STOPPED' | 'ERROR';
+
+export type MusicSessionDto = {
+  musicSessionId: string;
+  roomId: string;
+  liveSessionId: string;
+  status: MusicSessionStatus;
+  currentQueueItemId: string | null;
+  currentVideoId: string | null;
+  currentTitle: string | null;
+  currentChannelTitle: string | null;
+  currentThumbnailUrl: string | null;
+  durationSeconds: number | null;
+  positionSeconds: number;
+  allowRequests: boolean;
+  version: number;
+  queue: QueueItemDto[];
+  pendingRequests: QueueItemDto[];
+  history: QueueItemDto[];
+};
+
+export type AddQueueItemRequest = { videoId: string; expectedVersion?: number; playNow?: boolean };
+export type RequestSongRequest = { videoId: string };
+export type SeekRequest = { positionSeconds: number; expectedVersion?: number };
+export type VersionedRequest = { expectedVersion?: number };
+export type ReorderQueueRequest = { orderedQueueItemIds: string[]; expectedVersion?: number };
+export type MusicSettingsRequest = { allowRequests?: boolean };

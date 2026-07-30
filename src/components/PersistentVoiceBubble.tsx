@@ -13,7 +13,8 @@ import { useVoiceRoomContext } from '@/store/VoiceRoomContext';
  * completa). Vive por encima del Stack en _layout.tsx, así que sobrevive a la navegación entre
  * tabs y pantallas — es justo lo que el VoiceRoomProvider hace posible. */
 export function PersistentVoiceBubble() {
-  const { activeRoomId, connected, muted, participants, leave, toggleMute } = useVoiceRoomContext();
+  const { activeRoomId, connected, muted, canSpeak, microphoneChanging, localAudioPublished, participants, leave, toggleMute } =
+    useVoiceRoomContext();
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
   const accent = useAccent();
@@ -21,8 +22,9 @@ export function PersistentVoiceBubble() {
   const hiddenOnThisScreen = pathname === `/chat/${activeRoomId}`;
   if (!connected || !activeRoomId || hiddenOnThisScreen) return null;
 
-  const first = participants[0];
-  const label = first ? first.displayName : 'En vivo';
+  const host = participants.find((p) => p.role === 'host') ?? participants[0];
+  const label = host ? host.user.displayName : 'En vivo';
+  const micLooksOff = muted || !localAudioPublished;
 
   return (
     <Animated.View
@@ -34,8 +36,8 @@ export function PersistentVoiceBubble() {
         accessibilityLabel={`Volver a la sala en vivo: ${label}`}
         style={styles.pill}>
         <View style={styles.avatarWrap}>
-          {first ? (
-            <UserAvatar name={first.displayName} avatarUri={first.avatarUri} gradient={first.avatarGradient} size={40} />
+          {host ? (
+            <UserAvatar name={host.user.displayName} avatarUri={host.user.avatarUri} gradient={host.user.avatarGradient} size={40} />
           ) : (
             <View style={[styles.avatarFallback, { backgroundColor: accent.color }]}>
               <Ionicons name="mic" size={18} color={Colors.textOnAccent} />
@@ -49,13 +51,16 @@ export function PersistentVoiceBubble() {
             {label}
           </Text>
         </View>
-        <Pressable
-          onPress={toggleMute}
-          hitSlop={8}
-          accessibilityLabel={muted ? 'Activar micrófono' : 'Silenciar micrófono'}
-          style={[styles.iconButton, muted && styles.iconButtonActive]}>
-          <Ionicons name={muted ? 'mic-off' : 'mic'} size={16} color={muted ? Colors.coral : Colors.textPrimary} />
-        </Pressable>
+        {canSpeak && (
+          <Pressable
+            onPress={toggleMute}
+            disabled={microphoneChanging}
+            hitSlop={8}
+            accessibilityLabel={!localAudioPublished ? 'Reintentar micrófono' : muted ? 'Activar micrófono' : 'Silenciar micrófono'}
+            style={[styles.iconButton, micLooksOff && styles.iconButtonActive, microphoneChanging && styles.iconButtonBusy]}>
+            <Ionicons name={micLooksOff ? 'mic-off' : 'mic'} size={16} color={micLooksOff ? Colors.coral : Colors.textPrimary} />
+          </Pressable>
+        )}
         <Pressable onPress={leave} hitSlop={8} accessibilityLabel="Salir del live" style={styles.iconButton}>
           <Ionicons name="close" size={16} color={Colors.textPrimary} />
         </Pressable>
@@ -112,4 +117,5 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surfaceSoft,
   },
   iconButtonActive: { backgroundColor: 'rgba(255,79,69,0.16)' },
+  iconButtonBusy: { opacity: 0.6 },
 });
