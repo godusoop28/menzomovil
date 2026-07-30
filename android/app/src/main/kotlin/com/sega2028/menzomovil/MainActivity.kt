@@ -13,6 +13,7 @@ class MainActivity : FlutterActivity() {
     private val audioChannelName = "com.sega2028.menzomovil/background_audio"
     private val bubbleChannelName = "com.sega2028.menzomovil/live_bubble"
     private val bubbleEventsName = "com.sega2028.menzomovil/live_bubble_events"
+    private val menziDjBackgroundChannelName = "com.sega2028.menzomovil/menzi_dj_background"
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -96,6 +97,58 @@ class MainActivity : FlutterActivity() {
                     intent.action = LiveBubbleService.ACTION_HIDE
                     startService(intent)
                     result.success(null)
+                }
+                else -> result.notImplemented()
+            }
+        }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, menziDjBackgroundChannelName).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "enterBackground" -> {
+                    if (!canDrawOverlays()) {
+                        // Sin overlay no hay dónde montar el WebView nativo — Dart debe seguir
+                        // funcionando igual que antes de esta mejora (pausar y resincronizar al
+                        // volver), nunca romper por esto.
+                        result.success(false)
+                    } else {
+                        val intent = Intent(this, MenziDjBackgroundPlayerService::class.java)
+                        intent.action = MenziDjBackgroundPlayerService.ACTION_ENTER
+                        intent.putExtra(MenziDjBackgroundPlayerService.EXTRA_VIDEO_ID, call.argument<String>("videoId"))
+                        intent.putExtra(MenziDjBackgroundPlayerService.EXTRA_ORIGIN, call.argument<String>("origin"))
+                        intent.putExtra(MenziDjBackgroundPlayerService.EXTRA_POSITION, call.argument<Double>("positionSeconds") ?: 0.0)
+                        intent.putExtra(MenziDjBackgroundPlayerService.EXTRA_PLAYING, call.argument<Boolean>("playing") ?: true)
+                        intent.putExtra(MenziDjBackgroundPlayerService.EXTRA_MUTED, call.argument<Boolean>("muted") ?: false)
+                        intent.putExtra(MenziDjBackgroundPlayerService.EXTRA_VOLUME, call.argument<Int>("volume") ?: 80)
+                        startService(intent)
+                        result.success(true)
+                    }
+                }
+                "updateTrack" -> {
+                    val intent = Intent(this, MenziDjBackgroundPlayerService::class.java)
+                    intent.action = MenziDjBackgroundPlayerService.ACTION_UPDATE_TRACK
+                    intent.putExtra(MenziDjBackgroundPlayerService.EXTRA_VIDEO_ID, call.argument<String>("videoId"))
+                    intent.putExtra(MenziDjBackgroundPlayerService.EXTRA_POSITION, call.argument<Double>("positionSeconds") ?: 0.0)
+                    startService(intent)
+                    result.success(null)
+                }
+                "updateAudioState" -> {
+                    val intent = Intent(this, MenziDjBackgroundPlayerService::class.java)
+                    intent.action = MenziDjBackgroundPlayerService.ACTION_UPDATE_AUDIO
+                    intent.putExtra(MenziDjBackgroundPlayerService.EXTRA_MUTED, call.argument<Boolean>("muted") ?: false)
+                    intent.putExtra(MenziDjBackgroundPlayerService.EXTRA_VOLUME, call.argument<Int>("volume") ?: 80)
+                    startService(intent)
+                    result.success(null)
+                }
+                "exitBackground" -> {
+                    val active = MenziDjBackgroundPlayerService.instance
+                    if (active == null) {
+                        result.success(mapOf("positionSeconds" to 0.0))
+                    } else {
+                        active.currentPosition { position ->
+                            result.success(mapOf("positionSeconds" to position))
+                            stopService(Intent(this, MenziDjBackgroundPlayerService::class.java))
+                        }
+                    }
                 }
                 else -> result.notImplemented()
             }
