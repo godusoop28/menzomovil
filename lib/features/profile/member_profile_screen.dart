@@ -11,6 +11,7 @@ import '../home/post_card.dart';
 import '../shared/gradient_button.dart';
 import '../shared/menzo_avatar.dart';
 import '../shared/menzo_toast.dart';
+import 'profile_wall_section.dart';
 
 final memberProfileProvider = FutureProvider.family.autoDispose(
   (ref, String id) => ref.watch(userRepositoryProvider).getById(id),
@@ -121,10 +122,39 @@ class _MemberProfileScreenState extends ConsumerState<MemberProfileScreen> {
                 ],
               ),
               const SizedBox(height: 16),
-              GradientButton(
-                label: profile.followedByMe ? 'Dejar de seguir' : 'Seguir',
-                loading: _followBusy,
-                onPressed: () => _toggleFollow(profile),
+              Row(
+                children: [
+                  Expanded(
+                    child: GradientButton(
+                      label: profile.followedByMe
+                          ? 'Dejar de seguir'
+                          : 'Seguir',
+                      loading: _followBusy,
+                      onPressed: () => _toggleFollow(profile),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                        try {
+                          final room = await ref
+                              .read(chatRepositoryProvider)
+                              .openDirect(widget.id);
+                          if (context.mounted) context.push('/chat/${room.id}');
+                        } catch (_) {
+                          if (context.mounted)
+                            showMenzoToast(
+                              context,
+                              'No pudimos abrir la conversación.',
+                            );
+                        }
+                      },
+                      icon: const Icon(Icons.chat_bubble_outline, size: 16),
+                      label: const Text('Mensaje'),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 20),
               Text('Publicaciones', style: AppTextStyles.label()),
@@ -143,6 +173,8 @@ class _MemberProfileScreenState extends ConsumerState<MemberProfileScreen> {
                 loading: () => const Center(child: CircularProgressIndicator()),
                 error: (e, st) => const SizedBox.shrink(),
               ),
+              const SizedBox(height: 24),
+              ProfileWallSection(profileId: widget.id),
             ],
           );
         },

@@ -16,6 +16,7 @@ import '../shared/confirm_dialog.dart';
 import '../shared/menzi_illustration_state.dart';
 import '../shared/menzo_avatar.dart';
 import '../shared/menzo_toast.dart';
+import 'room_settings_screen.dart';
 
 final roomProvider = FutureProvider.family.autoDispose(
   (ref, String roomId) => ref.watch(chatRepositoryProvider).getRoom(roomId),
@@ -197,6 +198,20 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen> {
           IconButton(
             icon: const Icon(Icons.people_outline),
             onPressed: () => context.push('/chat/${widget.roomId}/members'),
+          ),
+          roomAsync.maybeWhen(
+            data: (room) =>
+                (room.role == RoomRole.owner || room.role == RoomRole.coHost)
+                ? IconButton(
+                    icon: const Icon(Icons.settings_outlined),
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) => RoomSettingsScreen(room: room),
+                      ),
+                    ),
+                  )
+                : const SizedBox.shrink(),
+            orElse: () => const SizedBox.shrink(),
           ),
         ],
       ),

@@ -10,6 +10,7 @@ import '../../core/theme/app_radius.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../data/models/chat_models.dart';
 import '../../data/models/community_models.dart';
+import '../post/create_post_screen.dart';
 import '../shared/app_shell.dart';
 import '../shared/menzo_avatar.dart';
 import 'post_card.dart';
@@ -116,6 +117,13 @@ class HomeScreen extends ConsumerWidget {
             ),
           ],
         ),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (context) => const CreatePostScreen()),
+        ),
+        backgroundColor: AppColors.orange,
+        child: const Icon(Icons.add, color: Colors.black),
       ),
     );
   }

@@ -8,7 +8,9 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_gradients.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../home/post_card.dart';
+import '../post/create_post_screen.dart';
 import '../shared/menzo_avatar.dart';
+import 'profile_wall_section.dart';
 
 final myPostsProvider = FutureProvider.family.autoDispose(
   (ref, String userId) => ref.watch(postRepositoryProvider).byAuthor(userId),
@@ -111,8 +113,17 @@ class OwnProfileScreen extends ConsumerWidget {
                 style: AppTextStyles.body(color: AppColors.coral),
               ),
             ),
+            const SizedBox(height: 24),
+            ProfileWallSection(profileId: profile.id),
           ],
         ),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (context) => const CreatePostScreen()),
+        ),
+        backgroundColor: AppColors.orange,
+        child: const Icon(Icons.add, color: Colors.black),
       ),
     );
   }

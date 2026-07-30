@@ -8,6 +8,7 @@ import '../../core/theme/app_text_styles.dart';
 import '../../data/models/chat_models.dart';
 import '../shared/menzi_illustration_state.dart';
 import 'chat_room_tile.dart';
+import 'create_room_screen.dart';
 
 final myRoomsProvider = FutureProvider.autoDispose(
   (ref) => ref.watch(chatRepositoryProvider).myRooms(),
@@ -30,6 +31,13 @@ class ChatListScreen extends ConsumerWidget {
             onPressed: () => context.push('/chat/public'),
           ),
         ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (context) => const CreateRoomScreen()),
+        ),
+        backgroundColor: AppColors.orange,
+        child: const Icon(Icons.add_comment_outlined, color: Colors.black),
       ),
       body: RefreshIndicator(
         onRefresh: () async => ref.invalidate(myRoomsProvider),
