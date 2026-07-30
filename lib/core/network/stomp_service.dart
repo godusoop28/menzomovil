@@ -20,8 +20,19 @@ class StompChannel {
   final Map<String, void Function(Map<String, dynamic>)> _handlers = {};
   final Map<String, StompUnsubscribe> _subs = {};
   bool _connected = false;
+  bool _hasConnectedBefore = false;
 
-  void connect({required void Function() onConnected}) {
+  /// [onConnected] se llama en la primera conexión y en cada reconexión (para volver a
+  /// suscribirse). [onReconnected] solo se llama a partir de la segunda vez — quien lo use
+  /// (p. ej. el chat) lo aprovecha para volver a pedir el historial reciente y así reconciliar
+  /// cualquier mensaje que el servidor haya publicado mientras el socket estuvo caído (STOMP no
+  /// reentrega mensajes perdidos de un topic, así que sin este refetch un mensaje enviado
+  /// durante un corte de conexión podía tardar minutos en aparecer, hasta el próximo refresh
+  /// manual de la pantalla).
+  void connect({
+    required void Function() onConnected,
+    void Function()? onReconnected,
+  }) {
     final session = SessionStorage.instance.cached;
     _client = StompClient(
       config: StompConfig(
@@ -39,13 +50,22 @@ class StompChannel {
             _subscribeNow(topic);
           }
           onConnected();
+          if (_hasConnectedBefore) {
+            onReconnected?.call();
+          } else {
+            _hasConnectedBefore = true;
+          }
         },
-        onWebSocketError: (dynamic error) {},
+        onDisconnect: (frame) => _connected = false,
+        onWebSocketDone: () => _connected = false,
+        onWebSocketError: (dynamic error) => _connected = false,
         onStompError: (frame) {},
       ),
     );
     _client!.activate();
   }
+
+  bool get isConnected => _connected;
 
   /// Devuelve el payload ya decodificado como Map — todos los eventos del backend son objetos
   /// JSON (ver LiveEvent/MusicEvent/RoomModerationEvent/TypingEvent).

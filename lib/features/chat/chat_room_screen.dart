@@ -43,8 +43,9 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen> {
   final _scrollController = ScrollController();
   final List<ChatMessage> _liveMessages = [];
   StompChannel? _channel;
-  bool _sending = false;
   bool _autoJoinAttempted = false;
+  final List<_PendingMessage> _pending = [];
+  int _localIdSeq = 0;
   final Map<String, String> _typingUsers = {};
   final Map<String, Timer> _typingExpiry = {};
   DateTime _lastTypingPublish = DateTime.fromMillisecondsSinceEpoch(0);
@@ -58,6 +59,7 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen> {
           _channel!.subscribe('/topic/rooms/${widget.roomId}/messages', (
             payload,
           ) {
+            if (!mounted) return;
             setState(() => _liveMessages.add(ChatMessage.fromJson(payload)));
             WidgetsBinding.instance.addPostFrameCallback(
               (_) => _scrollToBottom(),
@@ -87,6 +89,15 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen> {
             });
           });
         },
+        onReconnected: () {
+          // STOMP no reentrega mensajes publicados mientras el socket estuvo caído — sin este
+          // refetch, un mensaje de otra persona (o el eco del propio, si se perdió la
+          // reconexión) podía tardar minutos en aparecer, hasta el próximo refresh manual de
+          // la pantalla. `_liveMessages` no se limpia: el merge en `_mergeMessages` deduplica
+          // por id, así que no importa si algo queda repetido entre el fetch fresco y lo ya
+          // acumulado por WebSocket.
+          if (mounted) ref.invalidate(roomMessagesProvider(widget.roomId));
+        },
       );
     Future.microtask(
       () => ref.read(liveProvider.notifier).watchRoom(widget.roomId),
@@ -103,6 +114,22 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen> {
     _draftController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  /// Historial (REST) + mensajes recibidos por WebSocket, dedupeados por id — así no importa
+  /// si un refetch tras reconectar (ver `onReconnected` arriba) trae de nuevo algo que ya
+  /// habíamos agregado por STOMP, ni el orden en que lleguen ambas fuentes.
+  List<ChatMessage> _mergeMessages(List<ChatMessage> pageItems) {
+    final byId = <String, ChatMessage>{};
+    for (final m in pageItems) {
+      byId[m.id] = m;
+    }
+    for (final m in _liveMessages) {
+      byId[m.id] = m;
+    }
+    final merged = byId.values.toList()
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    return merged;
   }
 
   void _notifyTyping() {
@@ -160,21 +187,61 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen> {
     );
   }
 
+  /// Modelo de envío optimista: el mensaje aparece de inmediato como "enviando…" (nunca queda
+  /// invisible mientras el POST está en vuelo), se reconcilia con el mensaje real que devuelve
+  /// el backend (nunca se espera al eco de WebSocket para mostrarlo — si el socket está caído o
+  /// reconectando, eso es justo lo que antes hacía que un mensaje ya guardado pareciera
+  /// "perdido" varios minutos), y si falla queda marcado para reintentar sin perder el texto.
   Future<void> _send() async {
     final text = _draftController.text.trim();
-    if (text.isEmpty || _sending) return;
-    setState(() => _sending = true);
+    if (text.isEmpty) return;
     _draftController.clear();
+    final localId = 'local-${_localIdSeq++}';
+    setState(
+      () => _pending.add(
+        _PendingMessage(localId: localId, body: text, status: _SendStatus.sending),
+      ),
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    await _attemptSend(localId, text);
+  }
+
+  Future<void> _attemptSend(String localId, String text) async {
     try {
-      await ref.read(chatRepositoryProvider).sendMessage(widget.roomId, text);
+      final sent = await ref
+          .read(chatRepositoryProvider)
+          .sendMessage(widget.roomId, text);
+      if (!mounted) return;
+      setState(() {
+        _pending.removeWhere((p) => p.localId == localId);
+        // El eco por WebSocket de este mismo mensaje va a llegar también — `_mergeMessages`
+        // lo dedupea por id, así que agregarlo ya mismo (en vez de esperar el socket) es lo
+        // que hace que se vea "enviado" al instante en vez de recién cuando llegue el eco.
+        _liveMessages.add(sent);
+      });
     } catch (_) {
-      if (mounted) {
-        showMenzoToast(context, 'No pudimos enviar tu mensaje.');
-        _draftController.text = text;
-      }
-    } finally {
-      if (mounted) setState(() => _sending = false);
+      if (!mounted) return;
+      setState(() {
+        final idx = _pending.indexWhere((p) => p.localId == localId);
+        if (idx != -1) {
+          _pending[idx] = _pending[idx].copyWith(status: _SendStatus.failed);
+        }
+      });
     }
+  }
+
+  void _retry(String localId) {
+    final idx = _pending.indexWhere((p) => p.localId == localId);
+    if (idx == -1) return;
+    final text = _pending[idx].body;
+    setState(
+      () => _pending[idx] = _pending[idx].copyWith(status: _SendStatus.sending),
+    );
+    _attemptSend(localId, text);
+  }
+
+  void _discardFailed(String localId) {
+    setState(() => _pending.removeWhere((p) => p.localId == localId));
   }
 
   Future<void> _startLive(ChatRoom room) async {
@@ -315,8 +382,8 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen> {
           Expanded(
             child: messagesAsync.when(
               data: (page) {
-                final all = [...page.items, ..._liveMessages];
-                if (all.isEmpty) {
+                final all = _mergeMessages(page.items);
+                if (all.isEmpty && _pending.isEmpty) {
                   return const Center(
                     child: MenziIllustrationState(
                       image: MenziIllustration.chat,
@@ -326,7 +393,16 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen> {
                     ),
                   );
                 }
-                final timeline = _buildTimeline(all, myId);
+                final timeline = _buildTimeline(all, myId)
+                  ..addAll(
+                    _pending.map(
+                      (p) => _PendingMessageBubble(
+                        pending: p,
+                        onRetry: () => _retry(p.localId),
+                        onDiscard: () => _discardFailed(p.localId),
+                      ),
+                    ),
+                  );
                 return ListView.builder(
                   controller: _scrollController,
                   padding: const EdgeInsets.all(16),
@@ -407,7 +483,7 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen> {
                   ),
                   const SizedBox(width: 8),
                   IconButton(
-                    onPressed: _sending ? null : _send,
+                    onPressed: _send,
                     icon: const Icon(Icons.send),
                     style: IconButton.styleFrom(
                       backgroundColor: AppColors.orange,
@@ -559,6 +635,115 @@ class _MessageBubble extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           Flexible(child: bubble),
+        ],
+      ),
+    );
+  }
+}
+
+enum _SendStatus { sending, failed }
+
+class _PendingMessage {
+  const _PendingMessage({
+    required this.localId,
+    required this.body,
+    required this.status,
+  });
+  final String localId;
+  final String body;
+  final _SendStatus status;
+
+  _PendingMessage copyWith({_SendStatus? status}) => _PendingMessage(
+    localId: localId,
+    body: body,
+    status: status ?? this.status,
+  );
+}
+
+/// Burbuja de un mensaje todavía no confirmado por el backend — "enviando…" con spinner, o
+/// "no se pudo enviar" con reintentar/descartar si falló. Nunca queda un mensaje invisible
+/// mientras el POST está en vuelo, y nunca se envía silenciosamente minutos después sin mostrar
+/// su estado (ver `_send`/`_attemptSend` más arriba).
+class _PendingMessageBubble extends StatelessWidget {
+  const _PendingMessageBubble({
+    required this.pending,
+    required this.onRetry,
+    required this.onDiscard,
+  });
+  final _PendingMessage pending;
+  final VoidCallback onRetry;
+  final VoidCallback onDiscard;
+
+  @override
+  Widget build(BuildContext context) {
+    final failed = pending.status == _SendStatus.failed;
+    return Align(
+      alignment: Alignment.centerRight,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Container(
+            margin: const EdgeInsets.symmetric(vertical: 3),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width * 0.72,
+            ),
+            decoration: BoxDecoration(
+              color: failed
+                  ? AppColors.coral.withValues(alpha: 0.25)
+                  : AppColors.orange.withValues(alpha: 0.6),
+              borderRadius: BorderRadius.circular(AppRadius.lg),
+            ),
+            child: Text(
+              pending.body,
+              style: AppTextStyles.body(
+                color: failed ? AppColors.textPrimary : Colors.black,
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(right: 4),
+            child: failed
+                ? Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.error_outline,
+                        size: 12,
+                        color: AppColors.coral,
+                      ),
+                      const SizedBox(width: 4),
+                      GestureDetector(
+                        onTap: onRetry,
+                        child: Text(
+                          'No se pudo enviar · Reintentar',
+                          style: AppTextStyles.caption(color: AppColors.coral),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      GestureDetector(
+                        onTap: onDiscard,
+                        child: Icon(
+                          Icons.close,
+                          size: 12,
+                          color: AppColors.textMuted,
+                        ),
+                      ),
+                    ],
+                  )
+                : Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const SizedBox(
+                        width: 10,
+                        height: 10,
+                        child: CircularProgressIndicator(strokeWidth: 1.5),
+                      ),
+                      const SizedBox(width: 6),
+                      Text('Enviando…', style: AppTextStyles.caption()),
+                    ],
+                  ),
+          ),
         ],
       ),
     );
