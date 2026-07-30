@@ -28,7 +28,7 @@ const _stageRoles = {
 
 /// 1:1 con menzoweb/components/live/LiveRoomPanel.tsx — panel de pantalla completa del LIVE:
 /// escenario de hablantes, anuncio, temporizador, audiencia, moderación y entrada a Menzi DJ.
-class LiveRoomPanel extends ConsumerWidget {
+class LiveRoomPanel extends ConsumerStatefulWidget {
   const LiveRoomPanel({
     super.key,
     required this.room,
@@ -39,7 +39,35 @@ class LiveRoomPanel extends ConsumerWidget {
   final VoidCallback onMinimize;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<LiveRoomPanel> createState() => _LiveRoomPanelState();
+}
+
+class _LiveRoomPanelState extends ConsumerState<LiveRoomPanel> {
+  @override
+  void initState() {
+    super.initState();
+    // Mientras este panel está montado, los overlays persistentes (mini-bar de voz, mini-bar
+    // de Menzi DJ) deben quedar ocultos — si no, sus controles fijos (posicionados a un número
+    // de píxeles del borde inferior de TODA la pantalla) pueden terminar superpuestos a los
+    // propios controles del panel (mic/salir), que también viven abajo de todo. Se marca acá en
+    // vez de inferirlo de la ruta actual porque un `Navigator.push` común (como este) no cambia
+    // la ubicación que ve go_router.
+    Future.microtask(
+      () => ref.read(isLiveRoomPanelOpenProvider.notifier).state = true,
+    );
+  }
+
+  @override
+  void dispose() {
+    ref.read(isLiveRoomPanelOpenProvider.notifier).state = false;
+    super.dispose();
+  }
+
+  ChatRoom get room => widget.room;
+  VoidCallback get onMinimize => widget.onMinimize;
+
+  @override
+  Widget build(BuildContext context) {
     final live = ref.watch(liveProvider);
     final myId = ref.watch(authProvider).profile?.id;
     final isConnectedHere = live.activeRoomId == room.id;

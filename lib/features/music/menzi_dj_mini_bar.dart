@@ -23,7 +23,8 @@ class MenziDjMiniBar extends ConsumerWidget {
     final music = ref.watch(menziDjProvider);
     final live = ref.watch(liveProvider);
     final location = ref.watch(currentLocationProvider);
-    final hiddenHere = location == '/chat/${live.activeRoomId}';
+    final panelOpen = ref.watch(isLiveRoomPanelOpenProvider);
+    final hiddenHere = location == '/chat/${live.activeRoomId}' || panelOpen;
 
     if (!music.hasTrack ||
         music.expanded ||

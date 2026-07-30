@@ -17,7 +17,8 @@ class PersistentVoiceBubble extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final live = ref.watch(liveProvider);
     final location = ref.watch(currentLocationProvider);
-    final hiddenHere = location == '/chat/${live.activeRoomId}';
+    final panelOpen = ref.watch(isLiveRoomPanelOpenProvider);
+    final hiddenHere = location == '/chat/${live.activeRoomId}' || panelOpen;
 
     if (!live.connected || live.activeRoomId == null || hiddenHere)
       return const SizedBox.shrink();

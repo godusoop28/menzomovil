@@ -504,3 +504,9 @@ class LiveNotifier extends Notifier<LiveState> {
 final liveProvider = NotifierProvider<LiveNotifier, LiveState>(
   LiveNotifier.new,
 );
+
+/// true mientras [LiveRoomPanel] está montado (pantalla completa del LIVE). Los overlays
+/// persistentes (mini-bar, burbuja de voz) lo comprueban para nunca superponerse a los propios
+/// controles del panel (mic/salir) — más robusto que inferirlo comparando la ruta actual como
+/// string, que depende de que el panel siempre se haya abierto desde exactamente `/chat/:id`.
+final isLiveRoomPanelOpenProvider = StateProvider<bool>((ref) => false);
