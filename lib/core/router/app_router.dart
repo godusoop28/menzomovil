@@ -23,6 +23,7 @@ import '../../features/search/search_screen.dart';
 import '../../features/settings/settings_screen.dart';
 import '../../features/shared/app_shell.dart';
 import '../providers/auth_provider.dart';
+import 'current_location.dart';
 
 /// Notifica a go_router cada vez que cambia [authProvider] — reemplaza el
 /// `useEffect(() => { if (!hydrated) return; ... router.replace(...) }, [...])` de
@@ -42,7 +43,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
   final refreshNotifier = _AuthRefreshNotifier(ref);
   ref.onDispose(refreshNotifier.dispose);
 
-  return GoRouter(
+  final router = GoRouter(
     initialLocation: '/',
     refreshListenable: refreshNotifier,
     redirect: (context, state) {
@@ -170,4 +171,19 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
     ],
   );
+
+  // Mantiene [currentLocationProvider] al día con cada navegación — es lo único que los
+  // overlays persistentes (montados en el `builder` de MaterialApp.router, fuera del árbol de
+  // rutas — ver current_location.dart) pueden usar para saber en qué pantalla está el usuario.
+  void syncLocation() {
+    ref.read(currentLocationProvider.notifier).state = router.routerDelegate.currentConfiguration.uri.toString();
+  }
+
+  router.routerDelegate.addListener(syncLocation);
+  ref.onDispose(() => router.routerDelegate.removeListener(syncLocation));
+  // No se llama de una: modificar otro provider en medio de la construcción de este (durante
+  // el build) tira "Tried to modify a provider while the widget tree was building" en Riverpod.
+  Future.microtask(syncLocation);
+
+  return router;
 });

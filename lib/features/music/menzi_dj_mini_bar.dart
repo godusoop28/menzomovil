@@ -1,8 +1,9 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
+import '../../core/router/app_router.dart';
+import '../../core/router/current_location.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_radius.dart';
 import '../../core/theme/app_text_styles.dart';
@@ -21,8 +22,8 @@ class MenziDjMiniBar extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final music = ref.watch(menziDjProvider);
     final live = ref.watch(liveProvider);
-    final currentLocation = GoRouterState.of(context).matchedLocation;
-    final hiddenHere = currentLocation == '/chat/${live.activeRoomId}';
+    final location = ref.watch(currentLocationProvider);
+    final hiddenHere = location == '/chat/${live.activeRoomId}';
 
     if (!music.hasTrack ||
         music.expanded ||
@@ -45,7 +46,7 @@ class MenziDjMiniBar extends ConsumerWidget {
         child: InkWell(
           borderRadius: BorderRadius.circular(AppRadius.pill),
           onTap: () {
-            context.push('/chat/${live.activeRoomId}');
+            ref.read(appRouterProvider).push('/chat/${live.activeRoomId}');
             ref.read(menziDjProvider.notifier).setExpanded(true);
           },
           child: Container(

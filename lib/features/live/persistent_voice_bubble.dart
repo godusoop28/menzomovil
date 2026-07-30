@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
+import '../../core/router/app_router.dart';
+import '../../core/router/current_location.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_radius.dart';
 import '../../core/theme/app_text_styles.dart';
@@ -15,8 +16,8 @@ class PersistentVoiceBubble extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final live = ref.watch(liveProvider);
-    final currentLocation = GoRouterState.of(context).matchedLocation;
-    final hiddenHere = currentLocation == '/chat/${live.activeRoomId}';
+    final location = ref.watch(currentLocationProvider);
+    final hiddenHere = location == '/chat/${live.activeRoomId}';
 
     if (!live.connected || live.activeRoomId == null || hiddenHere)
       return const SizedBox.shrink();
@@ -31,7 +32,7 @@ class PersistentVoiceBubble extends ConsumerWidget {
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(AppRadius.pill),
-          onTap: () => context.push('/chat/${live.activeRoomId}'),
+          onTap: () => ref.read(appRouterProvider).push('/chat/${live.activeRoomId}'),
           child: Container(
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
