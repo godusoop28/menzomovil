@@ -49,6 +49,7 @@ dependencies:
   webview_flutter_android: ^4.9.0
   webview_flutter_wkwebview: ^3.22.0
   agora_rtc_engine: ^6.5.4
+  url_launcher: ^6.3.2
 
 dev_dependencies:
   flutter_test:

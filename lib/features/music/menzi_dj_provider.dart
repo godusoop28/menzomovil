@@ -7,6 +7,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 
+import '../../core/config/app_config.dart';
 import '../../core/network/api_exception.dart';
 import '../../core/network/stomp_service.dart';
 import '../../core/providers/repository_providers.dart';
@@ -26,6 +27,8 @@ class MenziDjState {
     this.localMuted = false,
     this.localVolume = _defaultVolume,
     this.playerReady = false,
+    this.playerErrorCode,
+    this.playerErrorVideoId,
   });
 
   final MusicSession? session;
@@ -35,7 +38,15 @@ class MenziDjState {
   final int localVolume;
   final bool playerReady;
 
+  /// Código `onError` del IFrame Player (ver [YtPlayerError]) para el video actual — no
+  /// confundir con la página de error "153" que servía YouTube por el bug de origen nulo, ya
+  /// corregido; esto son los errores reales y documentados de la API.
+  final int? playerErrorCode;
+  final String? playerErrorVideoId;
+
   bool get hasTrack => session?.currentVideoId != null;
+  bool get hasPlayerError =>
+      playerErrorCode != null && playerErrorVideoId == session?.currentVideoId;
 
   MenziDjState copyWith({
     MusicSession? session,
@@ -45,6 +56,9 @@ class MenziDjState {
     bool? localMuted,
     int? localVolume,
     bool? playerReady,
+    int? playerErrorCode,
+    bool clearPlayerError = false,
+    String? playerErrorVideoId,
   }) => MenziDjState(
     session: clearSession ? null : (session ?? this.session),
     loading: loading ?? this.loading,
@@ -52,6 +66,12 @@ class MenziDjState {
     localMuted: localMuted ?? this.localMuted,
     localVolume: localVolume ?? this.localVolume,
     playerReady: playerReady ?? this.playerReady,
+    playerErrorCode: clearPlayerError
+        ? null
+        : (playerErrorCode ?? this.playerErrorCode),
+    playerErrorVideoId: clearPlayerError
+        ? null
+        : (playerErrorVideoId ?? this.playerErrorVideoId),
   );
 }
 
@@ -91,7 +111,13 @@ class MenziDjNotifier extends Notifier<MenziDjState> {
         'MenziBridge',
         onMessageReceived: _handleBridgeMessage,
       )
-      ..loadHtmlString(menziDjPlayerHtml);
+      // `baseUrl` es la parte que faltaba: sin un origen HTTP(S) real, YouTube rechaza el
+      // embed con "Error 153" aunque el video sea perfectamente reproducible — ver
+      // AppConfig.menziDjOrigin y el comentario en menzi_dj_player_html.dart.
+      ..loadHtmlString(
+        menziDjPlayerHtml(AppConfig.menziDjOrigin),
+        baseUrl: AppConfig.menziDjOrigin,
+      );
     final platform = controller.platform;
     if (platform is AndroidWebViewController) {
       platform.setMediaPlaybackRequiresUserGesture(false);
@@ -171,6 +197,11 @@ class MenziDjNotifier extends Notifier<MenziDjState> {
     } else if (type == 'time' && msg['seconds'] is num) {
       _pendingTimeRequest?.call((msg['seconds'] as num).toDouble());
       _pendingTimeRequest = null;
+    } else if (type == 'error' && msg['code'] is num) {
+      state = state.copyWith(
+        playerErrorCode: (msg['code'] as num).toInt(),
+        playerErrorVideoId: msg['videoId'] as String? ?? _loadedVideoId,
+      );
     }
   }
 
@@ -178,6 +209,7 @@ class MenziDjNotifier extends Notifier<MenziDjState> {
     if (session == null || session.currentVideoId == null) return;
     if (_loadedVideoId != session.currentVideoId) {
       _loadedVideoId = session.currentVideoId;
+      state = state.copyWith(clearPlayerError: true);
       _sendCommand('load', {'videoId': session.currentVideoId});
     }
     if (session.status == MusicSessionStatus.playing) {
@@ -286,6 +318,15 @@ class MenziDjNotifier extends Notifier<MenziDjState> {
     if (_roomId == null) return;
     await ref.read(musicRepositoryProvider).removeQueueItem(_roomId!, id);
     await refresh();
+  }
+
+  /// URL para el fallback "Ver en YouTube" cuando el video no es embebible (error 101/150) o
+  /// falla por cualquier otro motivo — nunca extraemos audio ni usamos un reproductor no
+  /// oficial, solo abrimos la app/página real de YouTube.
+  String? get currentYoutubeUrl {
+    final videoId = state.session?.currentVideoId;
+    if (videoId == null) return null;
+    return 'https://www.youtube.com/watch?v=$videoId';
   }
 }
 

@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/network/api_exception.dart';
 import '../../data/models/chat_models.dart';
@@ -12,6 +13,7 @@ import '../shared/segmented_tabs.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_radius.dart';
 import '../../core/theme/app_text_styles.dart';
+import 'menzi_dj_player_html.dart';
 import 'menzi_dj_provider.dart';
 
 enum _Tab { search, queue, requests, history }
@@ -129,6 +131,13 @@ class _MenziDjPanelBodyState extends ConsumerState<_MenziDjPanelBody> {
             description: 'Busca una canción o pega un enlace para comenzar.',
             size: MenziIllustrationSize.small,
           ),
+        if (music.hasPlayerError) ...[
+          const SizedBox(height: 10),
+          _PlayerErrorBanner(
+            code: music.playerErrorCode!,
+            canModerate: _canModerate,
+          ),
+        ],
         const SizedBox(height: 12),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -198,6 +207,73 @@ class _MenziDjPanelBodyState extends ConsumerState<_MenziDjPanelBody> {
           _Tab.history => _HistoryTab(session: session),
         },
       ],
+    );
+  }
+}
+
+/// Se muestra cuando el IFrame Player reporta un error real para el video actual (ver
+/// [YtPlayerError]) — nunca dejamos solamente el recuadro genérico del WebView; siempre hay una
+/// salida: ver en YouTube, elegir otra canción, o saltar (moderadores).
+class _PlayerErrorBanner extends ConsumerWidget {
+  const _PlayerErrorBanner({required this.code, required this.canModerate});
+  final int code;
+  final bool canModerate;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.coral.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: AppColors.coral.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.error_outline,
+                size: 18,
+                color: AppColors.coral,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  YtPlayerError.describe(code),
+                  style: AppTextStyles.body(color: AppColors.textPrimary),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              OutlinedButton.icon(
+                onPressed: () async {
+                  final url = ref.read(menziDjProvider.notifier).currentYoutubeUrl;
+                  if (url == null) return;
+                  await launchUrl(
+                    Uri.parse(url),
+                    mode: LaunchMode.externalApplication,
+                  );
+                },
+                icon: const Icon(Icons.open_in_new, size: 16),
+                label: const Text('Ver en YouTube'),
+              ),
+              if (canModerate)
+                OutlinedButton.icon(
+                  onPressed: () => ref.read(menziDjProvider.notifier).skip(),
+                  icon: const Icon(Icons.skip_next, size: 16),
+                  label: const Text('Saltar'),
+                ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
