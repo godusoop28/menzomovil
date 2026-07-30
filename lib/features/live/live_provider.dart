@@ -1,5 +1,6 @@
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../../core/native/background_audio_channel.dart';
 import '../../core/network/stomp_service.dart';
@@ -25,6 +26,7 @@ class LiveState {
     this.microphoneChanging = false,
     this.localAudioPublished = false,
     this.lastMicrophoneError,
+    this.microphonePermissionDenied = false,
     this.participants = const [],
     this.speakingLevels = const {},
     this.speakingRequests = const [],
@@ -41,6 +43,7 @@ class LiveState {
   final bool microphoneChanging;
   final bool localAudioPublished;
   final String? lastMicrophoneError;
+  final bool microphonePermissionDenied;
   final List<LiveParticipant> participants;
   final Map<String, double> speakingLevels;
   final List<LiveParticipant> speakingRequests;
@@ -68,6 +71,7 @@ class LiveState {
     bool? localAudioPublished,
     String? lastMicrophoneError,
     bool clearLastMicrophoneError = false,
+    bool? microphonePermissionDenied,
     List<LiveParticipant>? participants,
     Map<String, double>? speakingLevels,
     List<LiveParticipant>? speakingRequests,
@@ -91,6 +95,8 @@ class LiveState {
     lastMicrophoneError: clearLastMicrophoneError
         ? null
         : (lastMicrophoneError ?? this.lastMicrophoneError),
+    microphonePermissionDenied:
+        microphonePermissionDenied ?? this.microphonePermissionDenied,
     participants: participants ?? this.participants,
     speakingLevels: speakingLevels ?? this.speakingLevels,
     speakingRequests: speakingRequests ?? this.speakingRequests,
@@ -198,18 +204,59 @@ class LiveNotifier extends Notifier<LiveState> {
       await refreshParticipants(roomId);
       if (state.canModerate) await refreshSpeakingRequests(roomId);
 
-      if (canSpeak) await _publishMic();
-      await BackgroundAudioChannel.start(
-        title: 'MENZO · en vivo',
-        text: 'Tu micrófono y Menzi DJ siguen activos en segundo plano',
-      );
+      if (canSpeak) {
+        await _requestMicAndPublish();
+      } else {
+        // Audiencia: nunca se pide RECORD_AUDIO ni se declara el tipo `microphone` del
+        // foreground service — solo `mediaPlayback`, para que Menzi DJ siga sonando en
+        // segundo plano. Pedir el permiso o el tipo microphone acá sería exactamente el bug
+        // que tiraba `SecurityException` (Android lo rechaza sin el permiso concedido).
+        await BackgroundAudioChannel.start(
+          mode: BackgroundAudioMode.listen,
+          title: 'MENZO · en vivo',
+          text: 'Escuchando un LIVE',
+        );
+      }
     } catch (e) {
       state = state.copyWith(
         connecting: false,
         lastMicrophoneError: 'No pudimos conectar al LIVE. Intenta de nuevo.',
       );
       await _cleanupEngine();
+      await BackgroundAudioChannel.stop();
     }
+  }
+
+  /// Único punto que pide `RECORD_AUDIO` en toda la app. Se llama siempre con la Activity
+  /// visible (nunca desde un timer, un callback de WebSocket en background, ni desde
+  /// `initState` sin que el usuario haya pedido entrar/hablar en un LIVE) — es lo que exige
+  /// Android para poder mostrar el diálogo del sistema. Solo después de un resultado
+  /// `granted` se publica el micrófono y se le pide al foreground service el tipo
+  /// `microphone`; si se rechaza, el usuario queda como hablante "silenciado sin permiso" en
+  /// vez de cerrarse la app.
+  Future<void> _requestMicAndPublish() async {
+    final status = await Permission.microphone.request();
+    if (!status.isGranted) {
+      state = state.copyWith(
+        microphonePermissionDenied: true,
+        localAudioPublished: false,
+        lastMicrophoneError:
+            'No pudimos acceder a tu micrófono. Actívalo desde los ajustes de la app para hablar.',
+      );
+      await BackgroundAudioChannel.start(
+        mode: BackgroundAudioMode.listen,
+        title: 'MENZO · en vivo',
+        text: 'Escuchando un LIVE',
+      );
+      return;
+    }
+    state = state.copyWith(microphonePermissionDenied: false);
+    await _publishMic();
+    await BackgroundAudioChannel.start(
+      mode: BackgroundAudioMode.speak,
+      title: 'MENZO · en vivo',
+      text: 'Tu micrófono está activo en un LIVE',
+    );
   }
 
   Future<void> _publishMic() async {
@@ -243,7 +290,7 @@ class LiveNotifier extends Notifier<LiveState> {
       await engine.renewToken(token.token);
       await engine.setClientRole(role: ClientRoleType.clientRoleBroadcaster);
       state = state.copyWith(myRole: LiveParticipantRole.speaker);
-      await _publishMic();
+      await _requestMicAndPublish();
     } catch (e) {
       state = state.copyWith(
         lastMicrophoneError: 'No pudimos activar tu lugar como hablante.',
@@ -267,7 +314,15 @@ class LiveNotifier extends Notifier<LiveState> {
     state = state.copyWith(
       muted: true,
       localAudioPublished: false,
+      microphonePermissionDenied: false,
       clearLastMicrophoneError: true,
+    );
+    // Bajamos el foreground service a solo `mediaPlayback` — seguimos en el LIVE como
+    // audiencia (y Menzi DJ puede seguir sonando), pero ya no corresponde el tipo `microphone`.
+    await BackgroundAudioChannel.start(
+      mode: BackgroundAudioMode.listen,
+      title: 'MENZO · en vivo',
+      text: 'Escuchando un LIVE',
     );
     if (engine != null && roomId != null) {
       try {
