@@ -86,7 +86,17 @@ class MenziDjNotifier extends Notifier<MenziDjState> {
   Timer? _driftTimer;
   String? _roomId;
   String? _loadedVideoId;
+  MusicSessionStatus? _lastAppliedStatus;
   void Function(double seconds)? _pendingTimeRequest;
+
+  /// Reloj local del momento en que llegó el `session` actual — `positionSeconds` viene
+  /// calculado por el backend en ESE instante, no se actualiza solo con el correr del tiempo.
+  /// Comparar `positionSeconds` tal cual, varios segundos después, contra
+  /// `player.getCurrentTime()` (que sí avanza en tiempo real) hacía que el chequeo de drift
+  /// pensara que el video se desincronizó cada vez más y lo reiniciara a la posición vieja cada
+  /// ~15s — exactamente el bug de "se reinicia solo". Mismo enfoque que
+  /// menzoweb/lib/music/MenziDjContext.tsx (`sessionSnapshotAtRef`).
+  DateTime? _sessionSnapshotAt;
 
   WebViewController get controller {
     if (_controller != null) return _controller!;
@@ -150,12 +160,18 @@ class MenziDjNotifier extends Notifier<MenziDjState> {
     );
     _driftTimer = Timer.periodic(_driftCheckInterval, (_) {
       final current = state.session;
-      if (current == null || current.status != MusicSessionStatus.playing)
+      final snapshotAt = _sessionSnapshotAt;
+      if (current == null ||
+          snapshotAt == null ||
+          current.status != MusicSessionStatus.playing)
         return;
+      final elapsed = DateTime.now().difference(snapshotAt).inMilliseconds / 1000;
+      final expectedPosition = current.positionSeconds + elapsed;
       _pendingTimeRequest = (seconds) {
-        final drift = (seconds - current.positionSeconds).abs();
-        if (drift > _driftThresholdSeconds)
-          _sendCommand('seek', {'seconds': current.positionSeconds});
+        final drift = (seconds - expectedPosition).abs();
+        if (drift > _driftThresholdSeconds) {
+          _sendCommand('seek', {'seconds': expectedPosition});
+        }
       };
       _sendCommand('getTime');
     });
@@ -167,6 +183,8 @@ class MenziDjNotifier extends Notifier<MenziDjState> {
     _driftTimer?.cancel();
     _driftTimer = null;
     _loadedVideoId = null;
+    _lastAppliedStatus = null;
+    _sessionSnapshotAt = null;
   }
 
   void _sendCommand(String cmd, [Map<String, dynamic>? args]) {
@@ -205,13 +223,27 @@ class MenziDjNotifier extends Notifier<MenziDjState> {
     }
   }
 
+  /// Solo re-seekea/retoca play-pause cuando de verdad cambió el video o el estado
+  /// (playing/paused/etc) — no en cada actualización de sesión. Antes se ejecutaba sin condición
+  /// alguna en CUALQUIER refresco (incluyendo agregar una canción a la cola sin tocar la que
+  /// está sonando), forzando un `seekTo`/`play` de la pista actual a cada rato; combinado con el
+  /// bug de posición congelada de arriba, esto hacía que agregar canciones se sintiera como si
+  /// "no dejara" — en realidad sí se agregaban, pero cada agregado sacudía/reiniciaba la que
+  /// estaba sonando.
   void _syncPlayerToSession(MusicSession? session) {
-    if (session == null || session.currentVideoId == null) return;
-    if (_loadedVideoId != session.currentVideoId) {
+    if (session == null || session.currentVideoId == null) {
+      _lastAppliedStatus = null;
+      return;
+    }
+    final videoChanged = _loadedVideoId != session.currentVideoId;
+    if (videoChanged) {
       _loadedVideoId = session.currentVideoId;
       state = state.copyWith(clearPlayerError: true);
       _sendCommand('load', {'videoId': session.currentVideoId});
     }
+    final statusChanged = _lastAppliedStatus != session.status;
+    if (!videoChanged && !statusChanged) return;
+    _lastAppliedStatus = session.status;
     if (session.status == MusicSessionStatus.playing) {
       _sendCommand('seek', {'seconds': session.positionSeconds});
       _sendCommand('play');
@@ -222,14 +254,28 @@ class MenziDjNotifier extends Notifier<MenziDjState> {
     }
   }
 
+  /// Punto único que reemplaza el `session` del estado — siempre re-estampa
+  /// `_sessionSnapshotAt` (el backend acaba de calcular `positionSeconds` fresco para este
+  /// instante, sea cual sea el motivo del refresco) y solo entonces sincroniza el player.
+  void _applySession(MusicSession session) {
+    _sessionSnapshotAt = DateTime.now();
+    state = state.copyWith(session: session);
+    _syncPlayerToSession(session);
+  }
+
   Future<void> refresh() async {
     final roomId = _roomId;
     if (roomId == null) return;
     state = state.copyWith(loading: true);
     try {
       final session = await ref.read(musicRepositoryProvider).snapshot(roomId);
-      state = state.copyWith(session: session, loading: false);
-      if (state.playerReady) _syncPlayerToSession(session);
+      state = state.copyWith(loading: false);
+      if (state.playerReady) {
+        _applySession(session);
+      } else {
+        _sessionSnapshotAt = DateTime.now();
+        state = state.copyWith(session: session);
+      }
     } catch (_) {
       state = state.copyWith(clearSession: true, loading: false);
     }
@@ -272,8 +318,7 @@ class MenziDjNotifier extends Notifier<MenziDjState> {
           expectedVersion: _version,
           playNow: playNow,
         );
-    state = state.copyWith(session: session);
-    _syncPlayerToSession(session);
+    _applySession(session);
   }
 
   Future<void> requestSong(String videoId) async {
@@ -301,8 +346,7 @@ class MenziDjNotifier extends Notifier<MenziDjState> {
     final roomId = _roomId;
     if (roomId == null) return;
     final session = await action(roomId, expectedVersion: _version);
-    state = state.copyWith(session: session);
-    _syncPlayerToSession(session);
+    _applySession(session);
   }
 
   Future<void> play() => _applyControl(ref.read(musicRepositoryProvider).play);
