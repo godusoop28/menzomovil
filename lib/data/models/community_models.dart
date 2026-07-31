@@ -70,11 +70,12 @@ enum NotificationCategory {
   mensajes,
   eventos,
   seguimientos,
+  enVivo,
 }
 
 NotificationCategory notificationCategoryFromJson(String value) =>
     NotificationCategory.values.firstWhere(
-      (e) => e.name == value,
+      (e) => e.name == (value == 'en_vivo' ? 'enVivo' : value),
       orElse: () => NotificationCategory.mensajes,
     );
 

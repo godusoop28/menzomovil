@@ -7,6 +7,7 @@ import 'features/live/live_bubble_controller.dart';
 import 'features/live/persistent_voice_bubble.dart';
 import 'features/music/menzi_dj_mini_bar.dart';
 import 'features/music/menzi_dj_player_host.dart';
+import 'features/notifications/notification_stream_controller.dart';
 
 /// Overlays persistentes montados por encima de TODA la app (cualquier ruta, no solo las 4
 /// pestañas principales) — igual que PersistentVoiceBubble/MenziDjPlayerHost montados en la
@@ -37,6 +38,7 @@ class MenzoApp extends ConsumerWidget {
     // Se instancia una sola vez acá (Riverpod cachea el resultado) para que el observer de
     // lifecycle de la burbuja flotante quede activo durante toda la vida de la app.
     ref.watch(liveBubbleControllerProvider);
+    ref.watch(notificationStreamControllerProvider);
     return MaterialApp.router(
       title: 'MENZO',
       debugShowCheckedModeBanner: false,

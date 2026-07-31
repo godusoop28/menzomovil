@@ -18,6 +18,7 @@ const _categoryIcons = {
   NotificationCategory.mensajes: Icons.chat_bubble_outline,
   NotificationCategory.eventos: Icons.calendar_month_outlined,
   NotificationCategory.seguimientos: Icons.person_add_alt_outlined,
+  NotificationCategory.enVivo: Icons.podcasts_outlined,
 };
 
 /// 1:1 con menzoweb/app/(app)/notifications/page.tsx.
