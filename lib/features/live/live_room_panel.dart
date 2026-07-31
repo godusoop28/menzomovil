@@ -254,6 +254,16 @@ class _BubbleOptInPrompt extends StatefulWidget {
 }
 
 class _BubbleOptInPromptState extends State<_BubbleOptInPrompt> {
+  /// Solo en memoria (no persistido) — se resetea al reiniciar la app. Antes se guardaba en
+  /// disco que "ya se preguntó" apenas se MOSTRABA el diálogo (sin importar la respuesta), así
+  /// que un solo "Ahora no" tocado una vez, alguna vez, dejaba el permiso sin volver a pedirse
+  /// NUNCA MÁS — y como este mismo permiso de overlay es el que necesita el hand-off nativo de
+  /// Menzi DJ (`MenziDjBackgroundPlayer`, no solo la burbuja), eso se sentía como "la música
+  /// sigue pausándose/reiniciándose al salir de la app" sin que hubiera forma de saber por qué
+  /// ni de arreglarlo desde la UI. Ahora se vuelve a preguntar en cada LIVE nuevo (una vez por
+  /// sesión de la app) mientras el permiso siga sin concederse de verdad.
+  static bool _declinedThisSession = false;
+
   @override
   void initState() {
     super.initState();
@@ -261,18 +271,27 @@ class _BubbleOptInPromptState extends State<_BubbleOptInPrompt> {
   }
 
   Future<void> _maybePrompt() async {
-    if (await BubblePreference.hasBeenPrompted()) return;
-    await BubblePreference.markPrompted();
+    // Nunca confiar en un flag propio de "ya se concedió" — siempre se vuelve a comprobar el
+    // estado real (pudo revocarse desde Ajustes, o el diálogo anterior pudo haberse aceptado
+    // sin que el usuario llegara a tocar el switch en la pantalla de Ajustes de Android).
+    if (await LiveBubbleChannel.checkPermission()) {
+      await BubblePreference.setEnabled(true);
+      return;
+    }
+    if (_declinedThisSession) return;
     if (!mounted) return;
     final accepted = await showConfirmDialog(
       context,
       title: 'Mantené el LIVE activo al minimizar',
       description:
-          'Menzo necesita este permiso para que tu voz y Menzi DJ sigan sonando cuando minimizás la app o usás otra — además vas a ver una burbuja para volver rápido a la llamada. Sin esto, el audio puede cortarse al salir de Menzo.',
+          'Menzo necesita este permiso para que tu voz y Menzi DJ sigan sonando cuando minimizás la app o usás otra — además vas a ver una burbuja para volver rápido a la llamada. Sin esto, el audio se corta al salir de Menzo.',
       confirmLabel: 'Permitir',
       cancelLabel: 'Ahora no',
     );
-    if (!accepted) return;
+    if (!accepted) {
+      _declinedThisSession = true;
+      return;
+    }
     await BubblePreference.setEnabled(true);
     await LiveBubbleChannel.requestPermission();
   }
