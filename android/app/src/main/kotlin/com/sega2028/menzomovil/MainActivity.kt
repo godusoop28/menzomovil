@@ -156,6 +156,13 @@ class MainActivity : FlutterActivity() {
                     )
                     result.success(null)
                 }
+                "updatePlayback" -> {
+                    MenziDjBackgroundPlayer.updatePlayback(
+                        positionSeconds = call.argument<Double>("positionSeconds") ?: 0.0,
+                        playing = call.argument<Boolean>("playing") ?: true,
+                    )
+                    result.success(null)
+                }
                 "pauseAndReportPosition" -> {
                     MenziDjBackgroundPlayer.pauseAndReportPosition { position ->
                         result.success(mapOf("positionSeconds" to position))

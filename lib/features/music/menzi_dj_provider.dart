@@ -25,6 +25,7 @@ class MenziDjState {
     this.session,
     this.loading = false,
     this.expanded = false,
+    this.videoHidden = false,
     this.localMuted = false,
     this.localVolume = _defaultVolume,
     this.playerReady = false,
@@ -35,6 +36,12 @@ class MenziDjState {
   final MusicSession? session;
   final bool loading;
   final bool expanded;
+
+  /// El usuario ocultó la vista previa flotante del video desde el panel de Menzi DJ — el
+  /// WebView sigue montado y reproduciendo audio normalmente, solo se deja de mostrar/mover el
+  /// recuadro visible. Nunca se cambia desde la burbuja misma (no es tocable, ver
+  /// menzi_dj_player_host.dart), solo desde controles reales del panel.
+  final bool videoHidden;
   final bool localMuted;
   final int localVolume;
   final bool playerReady;
@@ -54,6 +61,7 @@ class MenziDjState {
     bool clearSession = false,
     bool? loading,
     bool? expanded,
+    bool? videoHidden,
     bool? localMuted,
     int? localVolume,
     bool? playerReady,
@@ -64,6 +72,7 @@ class MenziDjState {
     session: clearSession ? null : (session ?? this.session),
     loading: loading ?? this.loading,
     expanded: expanded ?? this.expanded,
+    videoHidden: videoHidden ?? this.videoHidden,
     localMuted: localMuted ?? this.localMuted,
     localVolume: localVolume ?? this.localVolume,
     playerReady: playerReady ?? this.playerReady,
@@ -95,6 +104,20 @@ class MenziDjNotifier extends Notifier<MenziDjState>
   /// (`MenziDjBackgroundPlayer`, Android) en vez del WebView de Flutter — ver
   /// `_handleAppBackgrounded`/`_handleAppForegrounded`.
   bool _isBackgrounded = false;
+
+  /// Último estado (playing/paused) ya aplicado al reproductor NATIVO de fondo — igual que
+  /// `_lastAppliedStatus` pero para el camino de segundo plano, así una pausa/reanudación
+  /// remota (de un admin/co-host) mientras la app está minimizada se refleja también ahí, en
+  /// vez de solo reenviarse el video-id (que es todo lo que se reenviaba antes de este fix).
+  MusicSessionStatus? _lastBackgroundAppliedStatus;
+
+  /// Posición calculada localmente (reloj de pared) en el instante exacto del hand-off a
+  /// segundo plano, y cuándo se tomó ese cálculo — sirve de red de seguridad al volver a primer
+  /// plano: si el reproductor nativo reporta una posición sospechosamente cercana a 0 (p. ej.
+  /// por un fallo silencioso de `evaluateJavascript` del lado nativo), preferimos este estimado
+  /// antes que confiar ciegamente en un 0 y reiniciar la canción de la nada.
+  double? _backgroundHandoffPosition;
+  DateTime? _backgroundHandoffAt;
 
   /// Se incrementa en cada transición de lifecycle — si el usuario alterna primer/segundo
   /// plano muy rápido (más rápido de lo que tarda `activate()` en resolver, que incluye un
@@ -216,6 +239,13 @@ class MenziDjNotifier extends Notifier<MenziDjState>
     if (generation != _lifecycleGeneration) return;
     if (handedOff) {
       _isBackgrounded = true;
+      _lastBackgroundAppliedStatus = session.status;
+      _backgroundHandoffPosition = expectedPosition;
+      _backgroundHandoffAt = DateTime.now();
+      // Descarta cualquier respuesta de `getTime` del WebView de primer plano que estuviera en
+      // vuelo — ese WebView está a punto de pausarse y no debe poder seekearse a destiempo (ver
+      // el guard `_isBackgrounded` del timer de drift más abajo).
+      _pendingTimeRequest = null;
       _sendCommand('pause');
     }
   }
@@ -227,9 +257,19 @@ class MenziDjNotifier extends Notifier<MenziDjState>
   /// que se minimice en esta misma sesión de LIVE/Menzi DJ.
   Future<void> _handleAppForegrounded() async {
     ++_lifecycleGeneration;
+    // Descarta cualquier `getTime` del drift-timer que haya quedado pendiente de mientras
+    // estábamos en segundo plano — si su respuesta llegara después del seek de acá abajo,
+    // pisaría la posición correcta con una calculada sobre un `_sessionSnapshotAt` viejo (esto
+    // era la causa real de "la canción se reinicia al volver": el timer de drift seguía
+    // corriendo en segundo plano, ver el guard `_isBackgrounded` agregado en `_setup`).
+    _pendingTimeRequest = null;
     if (!_isBackgrounded) return;
     _isBackgrounded = false;
-    final position = await MenziDjBackgroundChannel.pauseAndReportPosition();
+    final reported = await MenziDjBackgroundChannel.pauseAndReportPosition();
+    final position = _resolveForegroundPosition(reported);
+    _backgroundHandoffPosition = null;
+    _backgroundHandoffAt = null;
+    _lastBackgroundAppliedStatus = null;
     _sessionSnapshotAt = DateTime.now();
     _sendCommand('seek', {'seconds': position});
     if (state.session?.status == MusicSessionStatus.playing) {
@@ -240,6 +280,20 @@ class MenziDjNotifier extends Notifier<MenziDjState>
     // (pausa remota, cambio de canción) mientras estábamos en segundo plano, así que se
     // reconcilia con un refresco normal.
     refresh();
+  }
+
+  /// Si el nativo reporta una posición sospechosamente cercana a 0 pero, según nuestro propio
+  /// reloj de pared desde el hand-off, la canción ya debería llevar un buen rato sonando, algo
+  /// falló en silencio del lado nativo (p. ej. `evaluateJavascript` no encontró `player`) — en
+  /// ese caso preferimos el estimado local en vez de reiniciar la canción desde cero.
+  double _resolveForegroundPosition(double reported) {
+    final handoffPosition = _backgroundHandoffPosition;
+    final handoffAt = _backgroundHandoffAt;
+    if (handoffPosition == null || handoffAt == null) return reported;
+    final elapsed = DateTime.now().difference(handoffAt).inMilliseconds / 1000;
+    final fallback = handoffPosition + elapsed;
+    if (reported < 1.0 && fallback > 2.0) return fallback;
+    return reported;
   }
 
   void _setup(String roomId) {
@@ -257,6 +311,13 @@ class MenziDjNotifier extends Notifier<MenziDjState>
       },
     );
     _driftTimer = Timer.periodic(_driftCheckInterval, (_) {
+      // Mientras la app está en segundo plano el WebView de Flutter está pausado de verdad (es
+      // el nativo quien reproduce) — pedirle `getTime`/seekearlo en ese estado comparaba una
+      // posición congelada contra un `expectedPosition` que sigue creciendo con el reloj de
+      // pared, disparando un `seek` de sobra cada ~30s. Esa respuesta tardía podía además
+      // pisar el seek correcto que hace `_handleAppForegrounded` justo al volver — la causa
+      // real del bug de "la canción se reinicia al volver a la app".
+      if (_isBackgrounded) return;
       final current = state.session;
       final snapshotAt = _sessionSnapshotAt;
       if (current == null ||
@@ -287,6 +348,9 @@ class MenziDjNotifier extends Notifier<MenziDjState>
     _sessionSnapshotAt = null;
     _localPlayerState = null;
     _isBackgrounded = false;
+    _lastBackgroundAppliedStatus = null;
+    _backgroundHandoffPosition = null;
+    _backgroundHandoffAt = null;
     // Recién acá se destruye de verdad el reproductor de fondo — dejarlo precalentado durante
     // toda la sesión (ver [_setup]) solo tiene sentido mientras siga habiendo un LIVE/Menzi DJ
     // activo al que volver.
@@ -370,14 +434,26 @@ class MenziDjNotifier extends Notifier<MenziDjState>
     state = state.copyWith(session: session);
     if (_isBackgrounded) {
       // El WebView de Flutter está pausado (el nativo en segundo plano es quien reproduce) —
-      // no tiene sentido mandarle comandos; si cambió la canción mientras estábamos en 2º
-      // plano, se lo avisamos al reproductor nativo en su lugar.
+      // no tiene sentido mandarle comandos; en su lugar reenviamos al reproductor nativo
+      // cualquier cambio real: de canción (nueva pista) o de estado (un admin/co-host pausó o
+      // reanudó de forma remota). Antes solo se reenviaba el cambio de canción, así que una
+      // pausa remota mientras la app estaba minimizada nunca llegaba a silenciar el audio de
+      // fondo — lo dejaba sonando aunque el resto de la sala lo viera pausado.
       final videoId = session.currentVideoId;
-      if (videoId != null && _loadedVideoId != videoId) {
+      final videoChanged = videoId != null && _loadedVideoId != videoId;
+      final statusChanged = _lastBackgroundAppliedStatus != session.status;
+      if (videoChanged) {
         _loadedVideoId = videoId;
+        _lastBackgroundAppliedStatus = session.status;
         MenziDjBackgroundChannel.updateTrack(
           videoId: videoId,
           positionSeconds: session.positionSeconds.toDouble(),
+        );
+      } else if (statusChanged) {
+        _lastBackgroundAppliedStatus = session.status;
+        MenziDjBackgroundChannel.updatePlayback(
+          positionSeconds: session.positionSeconds.toDouble(),
+          playing: session.status == MusicSessionStatus.playing,
         );
       }
       return;
@@ -404,6 +480,11 @@ class MenziDjNotifier extends Notifier<MenziDjState>
   }
 
   void setExpanded(bool value) => state = state.copyWith(expanded: value);
+
+  /// Solo cambia si el recuadro flotante del video se muestra o no — el audio sigue igual, el
+  /// WebView nunca se pausa/destruye por esto. Ver el comentario de [MenziDjState.videoHidden].
+  void setVideoHidden(bool value) =>
+      state = state.copyWith(videoHidden: value);
 
   void toggleLocalMute() {
     final next = !state.localMuted;

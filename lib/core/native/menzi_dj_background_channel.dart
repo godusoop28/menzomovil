@@ -80,6 +80,23 @@ class MenziDjBackgroundChannel {
     } catch (_) {}
   }
 
+  /// Aplica un cambio remoto de play/pause (admin/co-host pausó o reanudó) al reproductor de
+  /// fondo sin sacarlo de segundo plano — ver el comentario de clase en
+  /// `MenziDjBackgroundPlayer.kt` sobre por qué la pausa remota necesita este camino aparte del
+  /// hand-off de [activate]/[pauseAndReportPosition].
+  static Future<void> updatePlayback({
+    required double positionSeconds,
+    required bool playing,
+  }) async {
+    if (!Platform.isAndroid) return;
+    try {
+      await _channel.invokeMethod('updatePlayback', {
+        'positionSeconds': positionSeconds,
+        'playing': playing,
+      });
+    } catch (_) {}
+  }
+
   /// Devuelve la posición real alcanzada por el reproductor de fondo (para que el WebView de
   /// primer plano retome ahí sin salto audible) y lo pausa+mutea — pero NO lo destruye, queda
   /// precalentado para la próxima vez que se minimice en esta misma sesión.

@@ -98,6 +98,18 @@ object MenziDjBackgroundPlayer {
         if (muted) sendCommand("mute", null) else sendCommand("unmute", mapOf("volume" to volume))
     }
 
+    /** Aplica un cambio remoto de play/pause (p. ej. un admin/co-host pausó la canción) al
+     * reproductor de fondo SIN sacarlo de segundo plano ni tocar la ventana — a diferencia de
+     * [pauseAndReportPosition], esto no reporta posición ni destuma nada, solo mantiene el
+     * estado remoto real reflejado mientras la app sigue minimizada. Sin esto, una pausa remota
+     * durante el segundo plano nunca llegaba al WebView nativo: la música seguía sonando ahí
+     * aunque el resto de la sala la viera pausada. */
+    fun updatePlayback(positionSeconds: Double, playing: Boolean) {
+        if (webView == null) return
+        sendCommand("seek", mapOf("seconds" to positionSeconds))
+        if (playing) sendCommand("play", null) else sendCommand("pause", null)
+    }
+
     /** Pide la posición real alcanzada y PAUSA+MUTEA el reproductor de fondo — pero no lo
      * destruye, queda precalentado para la próxima vez que se minimice la app en esta misma
      * sesión de LIVE/Menzi DJ. */

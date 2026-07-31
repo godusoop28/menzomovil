@@ -181,6 +181,23 @@ class _MenziDjPanelBodyState extends ConsumerState<_MenziDjPanelBody> {
                 backgroundColor: AppColors.surfaceSecondary,
               ),
             ),
+            if (session?.currentVideoId != null)
+              IconButton(
+                onPressed: () => ref
+                    .read(menziDjProvider.notifier)
+                    .setVideoHidden(!music.videoHidden),
+                icon: Icon(
+                  music.videoHidden
+                      ? Icons.videocam_off
+                      : Icons.videocam_outlined,
+                ),
+                tooltip: music.videoHidden
+                    ? 'Mostrar video flotante'
+                    : 'Ocultar video flotante',
+                style: IconButton.styleFrom(
+                  backgroundColor: AppColors.surfaceSecondary,
+                ),
+              ),
           ],
         ),
         const SizedBox(height: 12),

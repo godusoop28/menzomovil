@@ -40,7 +40,10 @@ class _MenziDjPlayerHostState extends ConsumerState<MenziDjPlayerHost> {
       );
     }
 
-    if (!music.expanded) {
+    // El video visible solo aparece si el panel lo pidió expandido Y el usuario no lo ocultó
+    // desde ahí — en cualquier otro caso el WebView sigue montado igual (el audio no se
+    // interrumpe), solo se deja de mostrar/mover el recuadro.
+    if (!music.expanded || music.videoHidden) {
       return Positioned(
         bottom: 170,
         left: 16,
@@ -73,6 +76,7 @@ class _MenziDjPlayerHostState extends ConsumerState<MenziDjPlayerHost> {
       width: _expandedWidth,
       height: _expandedHeight,
       child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
         onPanUpdate: (details) {
           setState(() {
             final next = position + details.delta;
@@ -86,7 +90,16 @@ class _MenziDjPlayerHostState extends ConsumerState<MenziDjPlayerHost> {
           borderRadius: BorderRadius.circular(16),
           child: Stack(
             children: [
-              Positioned.fill(child: WebViewWidget(controller: controller)),
+              // `IgnorePointer` es a propósito acá: la burbuja solo se puede mover, nunca
+              // tocar — cualquier control de play/pause/skip vive en el panel de Menzi DJ, no
+              // en esta vista previa flotante. Sin esto, un tap sobre el iframe de YouTube
+              // podía llegar a la superficie embebida (mostrar sus propios controles nativos,
+              // pausarla, etc.) por fuera del estado que maneja el resto de la sala.
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: WebViewWidget(controller: controller),
+                ),
+              ),
               // Solo indica que se puede arrastrar — no intercepta toques, el
               // GestureDetector de más arriba ya cubre toda el área.
               const Positioned(
