@@ -290,16 +290,23 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen> {
 
     // Auto-unirse como audiencia al entrar a una sala con LIVE activo — 1:1 con el efecto de
     // menzoweb/app/(app)/chat/[id]/page.tsx que evita que el usuario tenga que tocar "Escuchar"
-    // manualmente cada vez que entra a un chat que ya tiene un LIVE en curso.
-    roomAsync.whenData((room) {
-      if (room.live &&
-          !_autoJoinAttempted &&
-          !live.connecting &&
-          live.activeRoomId != room.id) {
-        _autoJoinAttempted = true;
-        Future.microtask(() => ref.read(liveProvider.notifier).join(room.id));
-      }
-    });
+    // manualmente cada vez que entra a un chat que ya tiene un LIVE en curso. Se prioriza
+    // `live.viewingState` (actualizado en tiempo real por `watchRoom`, ver live_provider.dart)
+    // por sobre `room.live` (solo el snapshot REST del momento en que se abrió la pantalla) —
+    // si alguien inicia un LIVE mientras esta pantalla ya está abierta, `room.live` se queda
+    // congelado en `false` para siempre y este efecto nunca se disparaba.
+    final isThisRoomLive = live.watchedRoomId == widget.roomId
+        ? live.viewingState?.status == 'ACTIVE'
+        : roomAsync.maybeWhen(data: (room) => room.live, orElse: () => false);
+    if (isThisRoomLive &&
+        !_autoJoinAttempted &&
+        !live.connecting &&
+        live.activeRoomId != widget.roomId) {
+      _autoJoinAttempted = true;
+      Future.microtask(
+        () => ref.read(liveProvider.notifier).join(widget.roomId),
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -336,7 +343,7 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen> {
             data: (room) {
               final canModerate =
                   room.role == RoomRole.owner || room.role == RoomRole.coHost;
-              if (room.live) {
+              if (isThisRoomLive) {
                 return TextButton.icon(
                   onPressed: () => _openLivePanel(room),
                   icon: const Icon(

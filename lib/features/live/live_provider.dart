@@ -121,30 +121,89 @@ class LiveState {
 class LiveNotifier extends Notifier<LiveState> {
   RtcEngine? _engine;
   StompChannel? _liveChannel;
+  StompChannel? _watchChannel;
   String? _myUid;
+  int _watchRequestSeq = 0;
 
   @override
   LiveState build() {
     ref.onDispose(() {
       _liveChannel?.dispose();
+      _watchChannel?.dispose();
       _engine?.release();
     });
     return const LiveState();
   }
 
+  /// Solo mirar el estado del LIVE (para la cabecera/badge de la sala) sin unirse al audio —
+  /// 1:1 con menzoweb/lib/live/LiveRoomContext.tsx `watchRoom`. Antes esto solo hacía UN fetch
+  /// REST puntual y nunca más se actualizaba: si alguien iniciaba un LIVE mientras otro usuario
+  /// ya tenía la sala abierta (o la sala aparecía en el carrusel de "en vivo" de home), esa
+  /// persona nunca se enteraba — la sala parecía sin LIVE y no aparecía forma de unirse, hasta
+  /// que cerraba y volvía a abrir la pantalla. Ahora también se suscribe a
+  /// `/topic/rooms/{roomId}/live` y refresca en cualquier evento relevante.
   void watchRoom(String roomId) {
     state = state.copyWith(watchedRoomId: roomId);
-    ref.read(liveRepositoryProvider).state(roomId).then((session) {
-      if (state.watchedRoomId == roomId)
-        state = state.copyWith(
-          viewingState: session,
-          clearViewingState: session == null,
-        );
-    });
+    _refreshViewingState(roomId);
+
+    final channel = StompChannel();
+    _watchChannel?.dispose();
+    _watchChannel = channel;
+    channel.connect(
+      onConnected: () {
+        channel.subscribe('/topic/rooms/$roomId/live', (payload) {
+          if (state.watchedRoomId != roomId) return;
+          final type = payload['type'] as String?;
+          if (type == 'CHAT_LIVE_ENDED') {
+            final current = state.viewingState;
+            if (current != null) {
+              state = state.copyWith(
+                viewingState: LiveSession(
+                  id: current.id,
+                  roomId: current.roomId,
+                  status: 'ENDED',
+                  title: current.title,
+                  description: current.description,
+                  announcement: current.announcement,
+                  startedAt: current.startedAt,
+                  participantCount: current.participantCount,
+                  speakerCount: current.speakerCount,
+                  myRole: current.myRole,
+                  myMicrophoneEnabled: current.myMicrophoneEnabled,
+                  hasPendingSpeakRequest: current.hasPendingSpeakRequest,
+                ),
+              );
+            }
+            return;
+          }
+          _refreshViewingState(roomId);
+        });
+      },
+    );
+  }
+
+  /// `requestSeq` descarta una respuesta que llegue tarde después de una más nueva (dos
+  /// eventos casi juntos), para que el estado nunca "rebote" hacia uno viejo.
+  Future<void> _refreshViewingState(String roomId) async {
+    final seq = ++_watchRequestSeq;
+    try {
+      final session = await ref.read(liveRepositoryProvider).state(roomId);
+      if (state.watchedRoomId != roomId || seq != _watchRequestSeq) return;
+      state = state.copyWith(
+        viewingState: session,
+        clearViewingState: session == null,
+      );
+    } catch (_) {
+      if (state.watchedRoomId == roomId && seq == _watchRequestSeq) {
+        state = state.copyWith(clearViewingState: true);
+      }
+    }
   }
 
   void unwatchRoom(String roomId) {
     if (state.watchedRoomId == roomId) {
+      _watchChannel?.dispose();
+      _watchChannel = null;
       state = state.copyWith(clearWatchedRoomId: true, clearViewingState: true);
     }
   }
@@ -217,10 +276,18 @@ class LiveNotifier extends Notifier<LiveState> {
       );
 
       final canSpeak = _speakingRoles.contains(session.myRole);
-      await engine.joinChannel(
+      // El backend firma el token con el esquema de "User Account" (un string, el UUID real
+      // del usuario — ver LiveService.getToken/RtcTokenBuilder2.buildTokenWithUserAccount), no
+      // con un uid numérico. `joinChannel(uid: ...)` esperaba un entero, y `int.tryParse` sobre
+      // un UUID (con guiones y letras) siempre devuelve null → CADA usuario entraba con
+      // `uid: 0`, todos exactamente el mismo. Con una sola persona en el LIVE eso no se nota
+      // (no hay otro con quien chocar); apenas se suma una segunda persona real, Agora tiene
+      // dos participantes reclamando la misma identidad en el mismo canal — de ahí que audio,
+      // sincronización y todo lo demás se sintiera roto justo (y solo) con 2+ personas.
+      await engine.joinChannelWithUserAccount(
         token: token.token,
         channelId: token.channelName,
-        uid: int.tryParse(token.uid) ?? 0,
+        userAccount: token.uid,
         options: ChannelMediaOptions(
           channelProfile: ChannelProfileType.channelProfileCommunication,
           clientRoleType: canSpeak

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -49,11 +51,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   _HomeTab _tab = _HomeTab.recientes;
   String _roomSort = 'recent';
   final _joining = <String>{};
+  Timer? _liveRoomsTimer;
 
   @override
   void initState() {
     super.initState();
     requestStartupPermissions();
+    // `liveRoomsProvider` es un FutureProvider de una sola pasada — sin refrescarlo, el
+    // carrusel de "en vivo" nunca se enteraba de un LIVE que otro usuario inició mientras esta
+    // pantalla ya estaba abierta. 1:1 con el `setInterval(loadLiveRooms, 15000)` de
+    // menzoweb/app/(app)/page.tsx.
+    _liveRoomsTimer = Timer.periodic(
+      const Duration(seconds: 15),
+      (_) => ref.invalidate(liveRoomsProvider),
+    );
+  }
+
+  @override
+  void dispose() {
+    _liveRoomsTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _joinRoom(String roomId) async {
