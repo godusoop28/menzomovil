@@ -52,6 +52,11 @@ class LiveRepository {
   Future<void> leave(String roomId) =>
       _client.post<void>('/api/chat/rooms/$roomId/live/leave');
 
+  /// Sin llamar esto periódicamente, el backend da por terminada la sesión sola pasados 30-45s
+  /// sin actividad de join/leave — ver el comentario de clase en LiveService.heartbeat.
+  Future<void> heartbeat(String roomId) =>
+      _client.post<void>('/api/chat/rooms/$roomId/live/heartbeat');
+
   Future<LiveToken> token(String roomId) async => LiveToken.fromJson(
     await _client.get<Map<String, dynamic>>(
       '/api/chat/rooms/$roomId/live/token',

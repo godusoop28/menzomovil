@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -122,6 +124,7 @@ class LiveNotifier extends Notifier<LiveState> {
   RtcEngine? _engine;
   StompChannel? _liveChannel;
   StompChannel? _watchChannel;
+  Timer? _heartbeatTimer;
   String? _myUid;
   int _watchRequestSeq = 0;
 
@@ -130,6 +133,7 @@ class LiveNotifier extends Notifier<LiveState> {
     ref.onDispose(() {
       _liveChannel?.dispose();
       _watchChannel?.dispose();
+      _heartbeatTimer?.cancel();
       _engine?.release();
     });
     return const LiveState();
@@ -306,6 +310,7 @@ class LiveNotifier extends Notifier<LiveState> {
         myRole: session.myRole,
       );
       _subscribeLiveEvents(roomId);
+      _startHeartbeat(roomId);
       await refreshParticipants(roomId);
       if (state.canModerate) await refreshSpeakingRequests(roomId);
 
@@ -548,6 +553,18 @@ class LiveNotifier extends Notifier<LiveState> {
     await leave();
   }
 
+  /// Sin este ping periódico, el backend da por terminada la sesión sola a los 30-45s de
+  /// inactividad de join/leave (ver LiveService.heartbeat) — un LIVE tranquilo (nadie entra o
+  /// sale, solo se escucha) se "auto-terminaba" en silencio pasado ese lapso, y cualquier acción
+  /// posterior (buscar una canción en Menzi DJ, por ejemplo) chocaba con "no hay un LIVE activo
+  /// en esta sala" aunque el LIVE siguiera genuinamente en curso.
+  void _startHeartbeat(String roomId) {
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      ref.read(liveRepositoryProvider).heartbeat(roomId).catchError((_) {});
+    });
+  }
+
   void _subscribeLiveEvents(String roomId) {
     final channel = StompChannel();
     _liveChannel = channel;
@@ -614,6 +631,8 @@ class LiveNotifier extends Notifier<LiveState> {
   Future<void> _cleanupEngine() async {
     _liveChannel?.dispose();
     _liveChannel = null;
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
     try {
       await _engine?.leaveChannel();
       await _engine?.release();
