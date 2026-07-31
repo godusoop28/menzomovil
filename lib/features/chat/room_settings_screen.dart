@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../core/providers/repository_providers.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/utils/image_prep.dart';
 import '../../core/theme/app_radius.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../data/models/chat_models.dart';
@@ -52,11 +53,10 @@ class _RoomSettingsScreenState extends ConsumerState<RoomSettingsScreen> {
   }
 
   Future<void> _pickImage(void Function(String path) onPicked) async {
-    final image = await ImagePicker().pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 85,
-    );
-    if (image != null) setState(() => onPicked(image.path));
+    final image = await ImagePicker().pickImage(source: ImageSource.gallery);
+    if (image == null) return;
+    final path = await prepareImageForUpload(image);
+    if (mounted) setState(() => onPicked(path));
   }
 
   Future<void> _saveInfo() async {

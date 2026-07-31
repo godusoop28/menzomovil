@@ -8,6 +8,7 @@ import '../../core/providers/repository_providers.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_radius.dart';
 import '../../core/theme/app_text_styles.dart';
+import '../../core/utils/image_prep.dart';
 import '../home/home_screen.dart';
 import '../shared/gradient_button.dart';
 import '../shared/menzo_toast.dart';
@@ -45,11 +46,10 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   }
 
   Future<void> _pickImage() async {
-    final image = await ImagePicker().pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 85,
-    );
-    if (image != null) setState(() => _imagePath = image.path);
+    final image = await ImagePicker().pickImage(source: ImageSource.gallery);
+    if (image == null) return;
+    final path = await prepareImageForUpload(image);
+    if (mounted) setState(() => _imagePath = path);
   }
 
   Future<void> _submit() async {

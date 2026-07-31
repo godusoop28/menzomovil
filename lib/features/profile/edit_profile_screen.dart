@@ -6,6 +6,7 @@ import '../../core/providers/auth_provider.dart';
 import '../../core/providers/repository_providers.dart';
 import '../../core/theme/app_gradients.dart';
 import '../../core/theme/app_text_styles.dart';
+import '../../core/utils/image_prep.dart';
 import '../shared/gradient_button.dart';
 import '../shared/menzo_avatar.dart';
 import '../shared/menzo_toast.dart';
@@ -36,11 +37,10 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   }
 
   Future<void> _pickAvatar() async {
-    final image = await ImagePicker().pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 85,
-    );
-    if (image != null) setState(() => _pendingAvatarUri = image.path);
+    final image = await ImagePicker().pickImage(source: ImageSource.gallery);
+    if (image == null) return;
+    final path = await prepareImageForUpload(image);
+    if (mounted) setState(() => _pendingAvatarUri = path);
   }
 
   Future<void> _save() async {

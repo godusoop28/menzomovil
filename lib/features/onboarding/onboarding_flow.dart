@@ -9,6 +9,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_gradients.dart';
 import '../../core/theme/app_radius.dart';
 import '../../core/theme/app_text_styles.dart';
+import '../../core/utils/image_prep.dart';
 import '../shared/gradient_button.dart';
 import '../shared/menzo_avatar.dart';
 import '../shared/menzo_image_background.dart';
@@ -257,12 +258,13 @@ class _AvatarStep extends ConsumerWidget {
               final picker = ImagePicker();
               final image = await picker.pickImage(
                 source: ImageSource.gallery,
-                imageQuality: 85,
               );
-              if (image != null)
+              if (image != null) {
+                final path = await prepareImageForUpload(image);
                 ref
                     .read(onboardingDraftProvider.notifier)
-                    .setAvatarUri(image.path);
+                    .setAvatarUri(path);
+              }
             },
             child: Stack(
               children: [
