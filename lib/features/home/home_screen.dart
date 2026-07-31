@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/permissions/startup_permissions.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/providers/repository_providers.dart';
 import '../../core/theme/app_colors.dart';
@@ -48,6 +49,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   _HomeTab _tab = _HomeTab.recientes;
   String _roomSort = 'recent';
   final _joining = <String>{};
+
+  @override
+  void initState() {
+    super.initState();
+    requestStartupPermissions();
+  }
 
   Future<void> _joinRoom(String roomId) async {
     setState(() => _joining.add(roomId));
