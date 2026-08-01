@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../../core/native/background_audio_channel.dart';
+import '../../core/network/api_exception.dart';
 import '../../core/network/stomp_service.dart';
 import '../../core/providers/repository_providers.dart';
 import '../../data/models/live_models.dart';
@@ -365,13 +366,22 @@ class LiveNotifier extends Notifier<LiveState> {
       // reintento se ignore silenciosamente, la pantalla de "Escuchar" volvía a aparecer pero
       // tocarla ya no hacía nada. Ahora cualquier fallo dentro de este bloque deja un estado
       // limpio y consistente, listo para reintentar de verdad.
+      // Antes esto era siempre el mismo texto genérico sin importar la causa real — si el
+      // backend rechaza el join con un motivo concreto (p. ej. "tenés que unirte a la sala
+      // antes", un LIVE que ya terminó, etc.) eso quedaba oculto detrás de "intentá de nuevo",
+      // imposible de diagnosticar sin logs del servidor. Mostrar el mensaje real cuando es un
+      // ApiException (viene del backend, siempre en español y pensado para el usuario) deja ver
+      // la causa de verdad; solo se usa el genérico para errores nativos/de Agora sin mensaje
+      // útil para mostrar.
       state = state.copyWith(
         connecting: false,
         connected: false,
         clearActiveRoomId: true,
         clearSession: true,
         clearMyRole: true,
-        lastMicrophoneError: 'No pudimos conectar al LIVE. Intenta de nuevo.',
+        lastMicrophoneError: e is ApiException
+            ? e.message
+            : 'No pudimos conectar al LIVE. Intenta de nuevo.',
       );
       await _cleanupEngine();
       await BackgroundAudioChannel.stop();
