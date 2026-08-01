@@ -151,6 +151,15 @@ class MenziDjState {
 class MenziDjNotifier extends Notifier<MenziDjState>
     with WidgetsBindingObserver {
   WebViewController? _controller;
+
+  /// Id de la ÚNICA instancia global de Menzi DJ que este dispositivo debería tener corriendo —
+  /// generado una sola vez, cuando se crea el controller (ver getter `controller`). Viaja como
+  /// query param al cargar menzi-player.html y viene de vuelta en todo mensaje del bridge; si algún
+  /// día algo creara una segunda instancia por error, sus mensajes llegarían con OTRO instanceId y
+  /// `shouldAcceptBridgeMessage` los descartaría en vez de mezclar su estado con el real.
+  String? _instanceId;
+  String get instanceId => _instanceId ??= generatePlayerInstanceId('global');
+
   StompChannel? _channel;
   Timer? _driftTimer;
   Timer? _reconciliationTimer;
@@ -209,12 +218,21 @@ class MenziDjNotifier extends Notifier<MenziDjState>
     } else {
       params = const PlatformWebViewControllerCreationParams();
     }
+    final id = instanceId;
+    debugPrint('[YT-INSTANCE][${DeviceSession.id}] controller created id=$id');
     final controller = WebViewController.fromPlatformCreationParams(params)
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(const Color(0xFF000000))
       ..addJavaScriptChannel(
         'MenziBridge',
         onMessageReceived: _handleBridgeMessage,
+      )
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onPageFinished: (url) {
+            debugPrint('[YT-INSTANCE][${DeviceSession.id}] page loaded id=$id url=$url');
+          },
+        ),
       );
     final platform = controller.platform;
     if (platform is AndroidWebViewController) {
@@ -226,8 +244,13 @@ class MenziDjNotifier extends Notifier<MenziDjState>
     // produce el error 153 ("missing Referer/API client identity" — código real y documentado
     // de la YouTube IFrame Player API, ver YtPlayerError.missingClientIdentity). La página vive
     // en menzoweb/public/menzi-player.html, servida de verdad desde AppConfig.menziDjOrigin.
-    debugPrint('[MenziDJPlayer][${DeviceSession.id}] loading ${AppConfig.menziDjPlayerUrl}');
-    controller.loadRequest(Uri.parse(AppConfig.menziDjPlayerUrl));
+    // `instanceId` en la query — ver comentario del campo `instanceId` arriba.
+    final uri = Uri.parse(
+      AppConfig.menziDjPlayerUrl,
+    ).replace(queryParameters: {'instanceId': id});
+    debugPrint('[MenziDJPlayer][${DeviceSession.id}] loading $uri');
+    controller.loadRequest(uri);
+    debugPrint('[YT-INSTANCE][${DeviceSession.id}] WebView mounted id=$id');
     return _controller = controller;
   }
 
@@ -365,6 +388,9 @@ class MenziDjNotifier extends Notifier<MenziDjState>
   }
 
   void _sendCommand(String cmd, [Map<String, dynamic>? args]) {
+    debugPrint(
+      '[YT-INSTANCE][${DeviceSession.id}] command sent id=$instanceId cmd=$cmd',
+    );
     _controller?.runJavaScript(
       'window.handleMenziCommand(${jsonEncode(jsonEncode({'cmd': cmd, ...?args}))})',
     );
@@ -385,11 +411,29 @@ class MenziDjNotifier extends Notifier<MenziDjState>
     } catch (_) {
       return;
     }
+    final messageInstanceId = msg['instanceId'] as String?;
+    if (!shouldAcceptBridgeMessage(
+      messageInstanceId: messageInstanceId,
+      activeInstanceId: instanceId,
+    )) {
+      // Ver shouldAcceptBridgeMessage — un mensaje con un instanceId distinto al activo viene de
+      // un WebView/documento que ya no es este, y aplicar su estado pisaría el real con datos
+      // ajenos. Si esto se loguea alguna vez en producción, es la prueba de una duplicación real
+      // (no la que se confirmó en la auditoría — dos WIDGETS distintos, cada uno con su propio
+      // instanceId propio y consistente, nunca mezclado entre sí).
+      debugPrint(
+        '[YT-INSTANCE][${DeviceSession.id}] message from foreign instance ignored '
+        'expected=$instanceId got=$messageInstanceId type=${msg['type']}',
+      );
+      return;
+    }
     final type = msg['type'] as String?;
     if (type == 'ready') {
       // Única instancia de reproducción por dispositivo — ya no existe un segundo reproductor
       // nativo de fondo que pueda quedar sonando por su cuenta (ver MENZI_DJ_ARCHITECTURE.md).
-      debugPrint('[MenziDJ][${DeviceSession.id}] player ready — activePlayerCount=1');
+      debugPrint(
+        '[MenziDJ][${DeviceSession.id}] player ready id=$instanceId — activePlayerCount=1',
+      );
       state = state.copyWith(playerReady: true);
       _syncPlayerToSession(state.session);
     } else if (type == 'time' && msg['seconds'] is num) {
@@ -397,7 +441,7 @@ class MenziDjNotifier extends Notifier<MenziDjState>
       _pendingTimeRequest = null;
     } else if (type == 'error' && msg['errorCode'] is num) {
       debugPrint(
-        '[MenziDJ][${DeviceSession.id}] player error errorCode=${msg['errorCode']} '
+        '[YT-INSTANCE][${DeviceSession.id}] onError id=$instanceId errorCode=${msg['errorCode']} '
         'requestedVideoId=${msg['requestedVideoId'] ?? _loadedVideoId} actualVideoId=${msg['actualVideoId']} '
         'documentOrigin=${msg['documentOrigin']} playerState=${msg['playerState']} muted=${msg['muted']} volume=${msg['volume']}',
       );
@@ -405,7 +449,15 @@ class MenziDjNotifier extends Notifier<MenziDjState>
         playerErrorCode: (msg['errorCode'] as num).toInt(),
         playerErrorVideoId: msg['requestedVideoId'] as String? ?? _loadedVideoId,
       );
+    } else if (type == 'duplicatePlayerPrevented') {
+      debugPrint(
+        '[YT-INSTANCE][${DeviceSession.id}] duplicatePlayerPrevented id=$instanceId — '
+        'onYouTubeIframeAPIReady se disparó dos veces en el mismo documento',
+      );
     } else if (type == 'stateChange' && msg['state'] is num) {
+      debugPrint(
+        '[YT-INSTANCE][${DeviceSession.id}] stateChange id=$instanceId state=${msg['state']}',
+      );
       _localPlayerState = (msg['state'] as num).toInt();
       if (_localPlayerState == YtPlayerState.playing && state.autoplayBlocked) {
         state = state.copyWith(autoplayBlocked: false);

@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:menzomovil/features/music/menzi_dj_player_html.dart';
 import 'package:menzomovil/features/music/menzi_dj_provider.dart';
 
 /// Cubre las decisiones puras que MenziDjNotifier usa para versionado (Fase 3) y corrección de
@@ -100,6 +101,50 @@ void main() {
 
     test('adelantado (positivo) frena', () {
       expect(softCorrectionRateFor(2.0), 0.75);
+    });
+  });
+
+  group('shouldAcceptBridgeMessage (auditoría de instancias)', () {
+    test('acepta un mensaje sin instanceId (página abierta suelta en un browser)', () {
+      expect(
+        shouldAcceptBridgeMessage(
+          messageInstanceId: null,
+          activeInstanceId: 'global-1-1000',
+        ),
+        isTrue,
+      );
+    });
+
+    test('acepta un mensaje de la instancia activa', () {
+      expect(
+        shouldAcceptBridgeMessage(
+          messageInstanceId: 'global-1-1000',
+          activeInstanceId: 'global-1-1000',
+        ),
+        isTrue,
+      );
+    });
+
+    test('ignora un mensaje de una instancia distinta a la activa', () {
+      expect(
+        shouldAcceptBridgeMessage(
+          messageInstanceId: 'global-2-2000',
+          activeInstanceId: 'global-1-1000',
+        ),
+        isFalse,
+      );
+    });
+  });
+
+  group('generatePlayerInstanceId', () {
+    test('nunca repite id entre llamadas, incluso con el mismo tag', () {
+      final a = generatePlayerInstanceId('global');
+      final b = generatePlayerInstanceId('global');
+      expect(a, isNot(equals(b)));
+    });
+
+    test('conserva el tag como prefijo legible', () {
+      expect(generatePlayerInstanceId('diagnostic'), startsWith('diagnostic-'));
     });
   });
 }

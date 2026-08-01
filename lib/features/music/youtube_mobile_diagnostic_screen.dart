@@ -54,6 +54,14 @@ class _YouTubeMobileDiagnosticScreenState
   DateTime? _lastEventAt;
   String _log = '';
 
+  // Instancia AISLADA de esta pantalla — nunca la misma que MenziDjNotifier (ver
+  // menzi_dj_provider.dart/instanceId). Cada mensaje del bridge de ESTE WebView trae este mismo
+  // id; uno con un id distinto (que no debería poder pasar, ver shouldAcceptBridgeMessage) se
+  // ignora y queda registrado como "instancia distinta" en vez de mezclarse en el estado de acá.
+  final String _instanceId = generatePlayerInstanceId('diagnostic');
+  String? _lastStateInstanceId;
+  String? _lastErrorInstanceId;
+
   @override
   void initState() {
     super.initState();
@@ -94,10 +102,19 @@ class _YouTubeMobileDiagnosticScreenState
       platform.setMediaPlaybackRequiresUserGesture(false);
     }
     // `autoplay=0`: nada se reproduce solo — cada paso de acá abajo requiere un toque real, así
-    // un error no puede confundirse con un bloqueo de autoplay del WebView.
-    final url = '${AppConfig.menziDjPlayerUrl}?autoplay=0';
+    // un error no puede confundirse con un bloqueo de autoplay del WebView. `debugLabel=1` pinta
+    // "Instance: <id>" encima del propio player (ver menzi-player.html) para poder confirmar a
+    // simple vista, en el dispositivo, cuál instancia es esta.
+    final url = Uri.parse(AppConfig.menziDjPlayerUrl).replace(
+      queryParameters: {
+        'autoplay': '0',
+        'instanceId': _instanceId,
+        'debugLabel': '1',
+      },
+    );
     _appendLog('loading $url');
-    controller.loadRequest(Uri.parse(url));
+    debugPrint('[YT-INSTANCE] controller created id=$_instanceId (diagnostic)');
+    controller.loadRequest(url);
     _controller = controller;
   }
 
@@ -113,12 +130,32 @@ class _YouTubeMobileDiagnosticScreenState
     } catch (_) {
       return;
     }
+    final messageInstanceId = msg['instanceId'] as String?;
+    if (!shouldAcceptBridgeMessage(
+      messageInstanceId: messageInstanceId,
+      activeInstanceId: _instanceId,
+    )) {
+      // Se registra igual cuál instancia mandó qué (sin aplicar el resto del payload) — así
+      // "Last state/error instance" puede de verdad mostrar un id distinto al de "Active
+      // instance" si algún día hay una duplicación real, en vez de quedar siempre igual por
+      // construcción.
+      setState(() {
+        if (msg['type'] == 'stateChange') _lastStateInstanceId = messageInstanceId;
+        if (msg['type'] == 'error') _lastErrorInstanceId = messageInstanceId;
+      });
+      _appendLog(
+        'IGNORADO: mensaje de otra instancia expected=$_instanceId got=$messageInstanceId type=${msg['type']}',
+      );
+      return;
+    }
     setState(() {
       _lastEventAt = DateTime.now();
       switch (msg['type']) {
         case 'ready':
           _iframeReady = true;
-          _appendLog('iframe ready');
+          _appendLog('iframe ready id=$messageInstanceId');
+        case 'duplicatePlayerPrevented':
+          _appendLog('ALERTA: duplicatePlayerPrevented id=$messageInstanceId');
         case 'error':
           _lastErrorCode = (msg['errorCode'] as num?)?.toInt();
           _requestedVideoId = msg['requestedVideoId'] as String?;
@@ -130,8 +167,9 @@ class _YouTubeMobileDiagnosticScreenState
           _muted = msg['muted'] as bool?;
           _volume = (msg['volume'] as num?)?.toDouble();
           _currentTime = (msg['currentTime'] as num?)?.toDouble();
+          _lastErrorInstanceId = messageInstanceId;
           _appendLog(
-            'ERROR errorCode=${msg['errorCode']} requestedVideoId=${msg['requestedVideoId']} '
+            'ERROR id=$messageInstanceId errorCode=${msg['errorCode']} requestedVideoId=${msg['requestedVideoId']} '
             'actualVideoId=${msg['actualVideoId']} documentOrigin=${msg['documentOrigin']} '
             'documentReferrer=${msg['documentReferrer']} playerState=${msg['playerState']} '
             'muted=${msg['muted']} volume=${msg['volume']}',
@@ -142,8 +180,9 @@ class _YouTubeMobileDiagnosticScreenState
           _muted = msg['muted'] as bool?;
           _volume = (msg['volume'] as num?)?.toDouble();
           _currentTime = (msg['currentTime'] as num?)?.toDouble();
+          _lastStateInstanceId = messageInstanceId;
           _appendLog(
-            'stateChange state=${msg['state']} muted=${msg['muted']} volume=${msg['volume']}',
+            'stateChange id=$messageInstanceId state=${msg['state']} muted=${msg['muted']} volume=${msg['volume']}',
           );
         case 'autoplayBlocked':
           _autoplayBlocked = true;
@@ -151,7 +190,7 @@ class _YouTubeMobileDiagnosticScreenState
           _muted = msg['muted'] as bool?;
           _volume = (msg['volume'] as num?)?.toDouble();
           _appendLog(
-            'autoplayBlocked requestedVideoId=${msg['requestedVideoId']} '
+            'autoplayBlocked id=$messageInstanceId requestedVideoId=${msg['requestedVideoId']} '
             'playerState=${msg['playerState']} muted=${msg['muted']} volume=${msg['volume']}',
           );
       }
@@ -270,6 +309,9 @@ class _YouTubeMobileDiagnosticScreenState
                     style: Theme.of(context).textTheme.titleSmall,
                   ),
                   const SizedBox(height: 6),
+                  _DiagnosticRow('Active instance', _instanceId),
+                  _DiagnosticRow('Last state instance', _lastStateInstanceId),
+                  _DiagnosticRow('Last error instance', _lastErrorInstanceId),
                   _DiagnosticRow('pageUrl', AppConfig.menziDjPlayerUrl),
                   _DiagnosticRow('configuredOrigin', AppConfig.menziDjOrigin),
                   _DiagnosticRow('documentOrigin (del último error)', _documentOrigin),

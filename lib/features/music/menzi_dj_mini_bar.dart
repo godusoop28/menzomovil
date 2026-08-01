@@ -24,7 +24,13 @@ class MenziDjMiniBar extends ConsumerWidget {
     final live = ref.watch(liveProvider);
     final location = ref.watch(currentLocationProvider);
     final panelOpen = ref.watch(isLiveRoomPanelOpenProvider);
-    final hiddenHere = location == '/chat/${live.activeRoomId}' || panelOpen;
+    // '/debug/youtube-player' monta su propio WebView de YouTube aislado (ver
+    // MenziDjPlayerHost/_diagnosticRoute) — ocultar también esta barra ahí evita cualquier
+    // confusión visual entre el player real (oculto en esa ruta) y el de diagnóstico.
+    final hiddenHere =
+        location == '/chat/${live.activeRoomId}' ||
+        panelOpen ||
+        location == '/debug/youtube-player';
 
     if (!music.hasTrack || live.activeRoomId == null) {
       return const SizedBox.shrink();

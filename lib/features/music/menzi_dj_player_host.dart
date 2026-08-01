@@ -2,7 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import '../../core/router/current_location.dart';
 import 'menzi_dj_provider.dart';
+
+/// Ruta de [YouTubeMobileDiagnosticScreen] (ver core/router/app_router.dart) — esa pantalla
+/// monta su PROPIO WebViewController/YT.Player aislado a propósito (sin LIVE/STOMP/Agora), pero
+/// `_RootOverlays` (app.dart) sigue envolviendo esa ruta igual que cualquier otra, así que sin
+/// este chequeo el player global de acá abajo también queda visible encima — dos reproductores
+/// de YouTube superpuestos en pantalla al mismo tiempo (uno real, uno de diagnóstico), que es
+/// exactamente la duplicación reportada. No es un bug de instancias duplicadas del MISMO player:
+/// son dos widgets distintos, cada uno con su propio WebView, montados a la vez sin querer.
+const _diagnosticRoute = '/debug/youtube-player';
 
 const _expandedWidth = 280.0;
 const _expandedHeight = 200.0;
@@ -39,8 +49,9 @@ class _MenziDjPlayerHostState extends ConsumerState<MenziDjPlayerHost> {
   Widget build(BuildContext context) {
     final music = ref.watch(menziDjProvider);
     final controller = ref.watch(menziDjProvider.notifier).controller;
+    final location = ref.watch(currentLocationProvider);
 
-    if (!music.hasTrack) {
+    if (!music.hasTrack || location == _diagnosticRoute) {
       return const Positioned(
         width: 1,
         height: 1,
