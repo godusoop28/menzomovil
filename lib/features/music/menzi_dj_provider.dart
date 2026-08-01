@@ -395,13 +395,15 @@ class MenziDjNotifier extends Notifier<MenziDjState>
     } else if (type == 'time' && msg['seconds'] is num) {
       _pendingTimeRequest?.call((msg['seconds'] as num).toDouble());
       _pendingTimeRequest = null;
-    } else if (type == 'error' && msg['code'] is num) {
+    } else if (type == 'error' && msg['errorCode'] is num) {
       debugPrint(
-        '[MenziDJ][${DeviceSession.id}] player error code=${msg['code']} videoId=${msg['videoId'] ?? _loadedVideoId}',
+        '[MenziDJ][${DeviceSession.id}] player error errorCode=${msg['errorCode']} '
+        'requestedVideoId=${msg['requestedVideoId'] ?? _loadedVideoId} actualVideoId=${msg['actualVideoId']} '
+        'documentOrigin=${msg['documentOrigin']} playerState=${msg['playerState']} muted=${msg['muted']} volume=${msg['volume']}',
       );
       state = state.copyWith(
-        playerErrorCode: (msg['code'] as num).toInt(),
-        playerErrorVideoId: msg['videoId'] as String? ?? _loadedVideoId,
+        playerErrorCode: (msg['errorCode'] as num).toInt(),
+        playerErrorVideoId: msg['requestedVideoId'] as String? ?? _loadedVideoId,
       );
     } else if (type == 'stateChange' && msg['state'] is num) {
       _localPlayerState = (msg['state'] as num).toInt();
