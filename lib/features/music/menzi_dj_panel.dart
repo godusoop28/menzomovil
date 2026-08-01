@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../core/native/live_bubble_channel.dart';
 import '../../core/network/api_exception.dart';
 import '../../data/models/chat_models.dart';
 import '../../data/models/music_models.dart';
@@ -44,43 +43,19 @@ class _MenziDjPanelBody extends ConsumerStatefulWidget {
   ConsumerState<_MenziDjPanelBody> createState() => _MenziDjPanelBodyState();
 }
 
-class _MenziDjPanelBodyState extends ConsumerState<_MenziDjPanelBody>
-    with WidgetsBindingObserver {
+class _MenziDjPanelBodyState extends ConsumerState<_MenziDjPanelBody> {
   _Tab _tab = _Tab.search;
-
-  /// null = todavía sin comprobar. El hand-off nativo que mantiene la música sonando al
-  /// minimizar (`MenziDjBackgroundPlayer`) necesita el mismo permiso de overlay que la burbuja
-  /// del LIVE — si nunca se concedió (o se revocó), ese hand-off falla en silencio cada vez, lo
-  /// que se sentía como "la música se corta/reinicia al salir de la app" sin ninguna pista de
-  /// por qué. Este banner lo deja visible y accionable en vez de un fallo silencioso.
-  bool? _overlayGranted;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
     Future.microtask(
       () => ref.read(menziDjProvider.notifier).setExpanded(true),
     );
-    _checkOverlayPermission();
-  }
-
-  Future<void> _checkOverlayPermission() async {
-    final granted = await LiveBubbleChannel.checkPermission();
-    if (mounted) setState(() => _overlayGranted = granted);
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Vuelve a comprobar al volver de Ajustes (Android no devuelve un resultado confiable de
-    // esa pantalla) — así el banner desaparece solo apenas el permiso quede concedido de
-    // verdad, sin que el usuario tenga que cerrar y reabrir el panel.
-    if (state == AppLifecycleState.resumed) _checkOverlayPermission();
   }
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
     ref.read(menziDjProvider.notifier).setExpanded(false);
     super.dispose();
   }
@@ -97,10 +72,6 @@ class _MenziDjPanelBodyState extends ConsumerState<_MenziDjPanelBody>
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (_overlayGranted == false) ...[
-          _OverlayPermissionBanner(onGranted: _checkOverlayPermission),
-          const SizedBox(height: 12),
-        ],
         if (session?.currentVideoId != null)
           Container(
             padding: const EdgeInsets.all(10),
@@ -270,6 +241,30 @@ class _MenziDjPanelBodyState extends ConsumerState<_MenziDjPanelBody>
               ),
           ],
         ),
+        // Volumen LOCAL de Menzi DJ — nunca llega al backend ni afecta a nadie más (ver
+        // MenziDjNotifier.setLocalVolume): cada dispositivo elige el suyo, independiente del
+        // volumen de la llamada de Agora.
+        if (session?.currentVideoId != null)
+          Row(
+            children: [
+              Icon(
+                music.localMuted ? Icons.volume_off : Icons.volume_down,
+                size: 18,
+                color: AppColors.textMuted,
+              ),
+              Expanded(
+                child: Slider(
+                  value: music.localVolume.toDouble(),
+                  min: 0,
+                  max: 100,
+                  onChanged: (value) => ref
+                      .read(menziDjProvider.notifier)
+                      .setLocalVolume(value.round()),
+                ),
+              ),
+              const Icon(Icons.volume_up, size: 18, color: AppColors.textMuted),
+            ],
+          ),
         const SizedBox(height: 12),
         SegmentedTabs<_Tab>(
           options: _canModerate
@@ -294,51 +289,6 @@ class _MenziDjPanelBodyState extends ConsumerState<_MenziDjPanelBody>
           _Tab.history => _HistoryTab(session: session),
         },
       ],
-    );
-  }
-}
-
-/// Sin el permiso "Mostrar sobre otras apps" el reproductor nativo de fondo
-/// (`MenziDjBackgroundPlayer`) no puede montarse — la música puede cortarse o reiniciarse al
-/// minimizar sin ningún aviso. Este banner deja esa dependencia visible y accionable en vez de
-/// un fallo silencioso.
-class _OverlayPermissionBanner extends StatelessWidget {
-  const _OverlayPermissionBanner({required this.onGranted});
-  final VoidCallback onGranted;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.orange.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: AppColors.orange.withValues(alpha: 0.35)),
-      ),
-      child: Row(
-        children: [
-          const Icon(
-            Icons.warning_amber_rounded,
-            size: 18,
-            color: AppColors.orange,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              'Activá "Mostrar sobre otras apps" para que la música no se corte al minimizar.',
-              style: AppTextStyles.caption(),
-            ),
-          ),
-          const SizedBox(width: 8),
-          TextButton(
-            onPressed: () async {
-              await LiveBubbleChannel.requestPermission();
-              onGranted();
-            },
-            child: const Text('Activar'),
-          ),
-        ],
-      ),
     );
   }
 }
