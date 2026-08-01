@@ -41,6 +41,34 @@ void main() {
         isTrue,
       );
     });
+
+    test(
+      'salto de versión: v21 PAUSED se aplica sobre v20 PLAYING, y una v20 desordenada después no la pisa',
+      () {
+        // Mismo ejemplo del pedido de estabilización: si llegan v20 PLAYING y v21 PAUSED (en
+        // cualquier orden relativo mientras el player no estaba listo), lo que debe quedar
+        // aplicado es siempre la versión más alta — nunca reproducir la v20 después de haber
+        // visto la v21.
+        const currentAfterV20 = 20;
+        expect(
+          shouldApplyMusicEventVersion(
+            incomingVersion: 21,
+            currentVersion: currentAfterV20,
+          ),
+          isTrue,
+          reason: 'v21 es más nueva que v20 — debe aplicarse',
+        );
+        const currentAfterV21 = 21;
+        expect(
+          shouldApplyMusicEventVersion(
+            incomingVersion: 20,
+            currentVersion: currentAfterV21,
+          ),
+          isFalse,
+          reason: 'v20 es más vieja que la v21 ya aplicada — nunca debe pisarla',
+        );
+      },
+    );
   });
 
   group('classifyDrift', () {
