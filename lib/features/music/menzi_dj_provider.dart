@@ -215,18 +215,19 @@ class MenziDjNotifier extends Notifier<MenziDjState>
       ..addJavaScriptChannel(
         'MenziBridge',
         onMessageReceived: _handleBridgeMessage,
-      )
-      // `baseUrl` es la parte que faltaba: sin un origen HTTP(S) real, YouTube rechaza el
-      // embed con "Error 153" aunque el video sea perfectamente reproducible — ver
-      // AppConfig.menziDjOrigin y el comentario en menzi_dj_player_html.dart.
-      ..loadHtmlString(
-        menziDjPlayerHtml(AppConfig.menziDjOrigin),
-        baseUrl: AppConfig.menziDjOrigin,
       );
     final platform = controller.platform;
     if (platform is AndroidWebViewController) {
       platform.setMediaPlaybackRequiresUserGesture(false);
     }
+    // `loadRequest` a una página HTTP(S) real — NO `loadHtmlString`/`baseUrl`. Un documento
+    // generado in-process con un origen sintético no garantiza que Android WebView mande un
+    // HTTP Referer válido en los pedidos internos que hace el iframe de YouTube; eso es lo que
+    // produce el error 153 ("missing Referer/API client identity" — código real y documentado
+    // de la YouTube IFrame Player API, ver YtPlayerError.missingClientIdentity). La página vive
+    // en menzoweb/public/menzi-player.html, servida de verdad desde AppConfig.menziDjOrigin.
+    debugPrint('[MenziDJPlayer][${DeviceSession.id}] loading ${AppConfig.menziDjPlayerUrl}');
+    controller.loadRequest(Uri.parse(AppConfig.menziDjPlayerUrl));
     return _controller = controller;
   }
 

@@ -1,172 +1,11 @@
-/// Página mínima que carga el reproductor OFICIAL de YouTube (IFrame Player API) dentro de un
-/// WebView — no hay SDK nativo de YouTube para Flutter, y este es el mismo patrón ya usado en
-/// la versión React Native de esta app (WebView + IFrame API oficial), portado acá con
-/// `MenziBridge` (JavaScriptChannel de webview_flutter) en vez de `ReactNativeWebView.postMessage`.
-///
-/// Nunca se extrae audio del reproductor ni se oculta permanentemente — el iframe de YouTube
-/// sigue siendo el que reproduce, esto solo lo controla por comandos en vez de botones visibles.
-///
-/// [origin] debe coincidir exactamente con el `baseUrl` que se le pasa a
-/// `WebViewController.loadHtmlString` (ver `AppConfig.menziDjOrigin`) — cargar esta página sin
-/// un origen HTTP(S) real (p. ej. `loadHtmlString` sin `baseUrl`, que deja la página con un
-/// origen opaco tipo `about:blank`) es la causa exacta de "Error 153 — Error de configuración
-/// del reproductor de video" de YouTube: el iframe embed rechaza pedidos sin un origen válido,
-/// incluso para videos perfectamente reproducibles en youtube.com.
-String menziDjPlayerHtml(String origin) =>
-    '''<!DOCTYPE html>
-<html>
-<head>
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <style>
-    html, body { margin: 0; padding: 0; background: #000; width: 100%; height: 100%; overflow: hidden; }
-    #player { width: 100%; height: 100%; }
-  </style>
-</head>
-<body>
-  <div id="player"></div>
-  <script src="https://www.youtube.com/iframe_api"></script>
-  <script>
-    var player = null;
-    var ready = false;
-    var pendingVideoId = null;
-    var currentVideoId = null;
-    var blockCheckTimer = null;
-
-    function post(message) {
-      if (window.MenziBridge) {
-        window.MenziBridge.postMessage(JSON.stringify(message));
-      }
-    }
-
-    // No basta con llamar playVideo()/unMute() y asumir que ya suena — un WebView/OEM que
-    // ignore la configuración de "no requiere gesto del usuario" (ver
-    // AndroidWebViewController.setMediaPlaybackRequiresUserGesture(false) y
-    // WebKitWebViewControllerCreationParams.mediaTypesRequiringUserAction en el lado Dart)
-    // puede aceptar el comando en silencio sin que el audio realmente arranque. Este margen le
-    // da tiempo al player de pasar por BUFFERING legítimo antes de considerar que quedó
-    // bloqueado. [expectMuted] es lo que el propio comando dejó pedido (un `mute` local del
-    // usuario nunca debe reportarse como "bloqueado" — mudo a propósito no es un fallo); solo
-    // cuenta como bloqueado si, pese a esperar audio real, el player queda parado, mudo o en
-    // volumen 0.
-    function scheduleBlockCheck(expectMuted) {
-      if (blockCheckTimer) clearTimeout(blockCheckTimer);
-      blockCheckTimer = setTimeout(function () {
-        blockCheckTimer = null;
-        if (!player) return;
-        var s = player.getPlayerState();
-        var stateOk = (s === 1 || s === 3);
-        var muteOk = expectMuted || !player.isMuted();
-        var volumeOk = expectMuted || player.getVolume() > 0;
-        if (!stateOk || !muteOk || !volumeOk) {
-          post({ type: 'autoplayBlocked' });
-        }
-      }, 2500);
-    }
-
-    function cancelBlockCheck() {
-      if (blockCheckTimer) {
-        clearTimeout(blockCheckTimer);
-        blockCheckTimer = null;
-      }
-    }
-
-    function onYouTubeIframeAPIReady() {
-      player = new YT.Player('player', {
-        width: '100%',
-        height: '100%',
-        playerVars: {
-          autoplay: 1,
-          mute: 1,
-          playsinline: 1,
-          controls: 0,
-          modestbranding: 1,
-          rel: 0,
-          origin: '$origin',
-          enablejsapi: 1
-        },
-        events: {
-          onReady: function () {
-            ready = true;
-            post({ type: 'ready' });
-            if (pendingVideoId) {
-              currentVideoId = pendingVideoId;
-              player.loadVideoById(pendingVideoId);
-              pendingVideoId = null;
-            }
-          },
-          onStateChange: function (event) {
-            if (event.data === 1) cancelBlockCheck();
-            post({ type: 'stateChange', state: event.data });
-          },
-          onError: function (event) {
-            post({ type: 'error', code: event.data, videoId: currentVideoId });
-          }
-        }
-      });
-    }
-
-    window.handleMenziCommand = function (raw) {
-      var msg;
-      try { msg = JSON.parse(raw); } catch (e) { return; }
-      if (!ready || !player) {
-        if (msg.cmd === 'load') pendingVideoId = msg.videoId;
-        return;
-      }
-      switch (msg.cmd) {
-        case 'load':
-          currentVideoId = msg.videoId;
-          // Con posición inicial en el mismo loadVideoById (en vez de cargar y mandar un seek
-          // aparte inmediatamente después) evita una carrera entre dos llamadas JS separadas —
-          // relevante sobre todo para quien entra tarde a una canción ya empezada (ver Fase 11):
-          // el video arranca directo cerca de la posición real, no desde 0 con un salto detrás.
-          if (typeof msg.startSeconds === 'number') {
-            player.loadVideoById({ videoId: msg.videoId, startSeconds: msg.startSeconds });
-          } else {
-            player.loadVideoById(msg.videoId);
-          }
-          break;
-        case 'play':
-          player.playVideo();
-          // `play` solo no cambia el mute — se evalúa contra lo que el player ya tenía.
-          scheduleBlockCheck(player.isMuted());
-          break;
-        case 'pause':
-          cancelBlockCheck();
-          player.pauseVideo();
-          break;
-        case 'seek':
-          player.seekTo(msg.seconds, true);
-          break;
-        case 'mute':
-          // Silencio LOCAL a propósito (el usuario o el estado inicial) — nunca es "bloqueado".
-          cancelBlockCheck();
-          player.mute();
-          break;
-        case 'unmute':
-          player.unMute();
-          if (typeof msg.volume === 'number') player.setVolume(msg.volume);
-          scheduleBlockCheck(false);
-          break;
-        case 'volume':
-          player.setVolume(msg.volume);
-          break;
-        case 'getTime':
-          post({ type: 'time', seconds: player.getCurrentTime(), state: player.getPlayerState() });
-          break;
-        case 'setRate':
-          // Corrección suave de drift (Fase 9): un empujón de velocidad temporal en vez de un
-          // seek audible para desincronizaciones chicas. setPlaybackRate ajusta al valor
-          // soportado más cercano solo; no hace falta round-trip a getAvailablePlaybackRates()
-          // para este uso (nunca se pide algo lejos de 1.0).
-          player.setPlaybackRate(msg.rate);
-          break;
-      }
-    };
-  </script>
-</body>
-</html>''';
-
-/// Espejo de YT.PlayerState del IFrame API oficial.
+/// Espejo de YT.PlayerState del IFrame API oficial — el reproductor real vive en
+/// `menzoweb/public/menzi-player.html` (servido de verdad vía HTTPS y cargado con
+/// `WebViewController.loadRequest`, ver `AppConfig.menziDjPlayerUrl` y
+/// `MenziDjNotifier.controller`). Esta clase y [YtPlayerError] solo son el espejo Dart de los
+/// valores que ese HTML manda por el bridge — ya no generamos el documento del player in-process
+/// acá: un documento HTML creado con `loadHtmlString`/`baseUrl` no garantiza que Android WebView
+/// mande un HTTP Referer válido en los pedidos internos que hace el iframe de YouTube, y eso es
+/// justo lo que produce el error 153 (ver [YtPlayerError.missingClientIdentity]).
 class YtPlayerState {
   YtPlayerState._();
   static const unstarted = -1;
@@ -177,11 +16,8 @@ class YtPlayerState {
   static const cued = 5;
 }
 
-/// Espejo de los códigos documentados de `onError` del IFrame API oficial
-/// (https://developers.google.com/youtube/iframe_api_reference#onError) — "153" no es un código
-/// real de la API (es una página de error estática que sirve YouTube cuando el pedido del iframe
-/// no trae un origen válido, ver [menziDjPlayerHtml]); si el origen está bien configurado y de
-/// todos modos aparece un error, va a ser uno de estos.
+/// Códigos documentados de `onError` del IFrame Player API oficial
+/// (https://developers.google.com/youtube/iframe_api_reference#onError).
 class YtPlayerError {
   YtPlayerError._();
 
@@ -198,6 +34,16 @@ class YtPlayerError {
   static const embedNotAllowed = 101;
   static const embedNotAllowed2 = 150;
 
+  /// 153 — código REAL y documentado de la YouTube IFrame Player API (no una invención ni un
+  /// código inventado por Menzo): el pedido del embed llegó sin poder identificar el origen/
+  /// Referer del cliente ante YouTube. No tiene nada que ver con el video en sí — el mismo video
+  /// puede reproducirse perfectamente en youtube.com o en menzoweb. Nunca debe tratarse como
+  /// "este video no es embebible" (eso son 101/150): no hay que marcarlo como restringido, no
+  /// saltar de canción automáticamente, no levantar un segundo reproductor — hay que corregir el
+  /// origen/Referer de la página que sirve el iframe (ver menzoDjPlayerHtml.md /
+  /// menzoweb/public/menzi-player.html) y permitir reintentar.
+  static const missingClientIdentity = 153;
+
   static bool isEmbedRestricted(int code) =>
       code == embedNotAllowed || code == embedNotAllowed2;
 
@@ -207,6 +53,8 @@ class YtPlayerError {
     notFound => 'Este video no está disponible (eliminado o privado).',
     embedNotAllowed || embedNotAllowed2 =>
       'El propietario de este video no permite reproducirlo embebido.',
+    missingClientIdentity =>
+      'El reproductor móvil no pudo identificarse correctamente ante YouTube.',
     _ => 'No pudimos reproducir este video (código $code).',
   };
 }

@@ -12,15 +12,19 @@ class AppConfig {
   static String get wsUrl =>
       apiBaseUrl.replaceFirst(RegExp(r'^http'), 'ws') + '/ws';
 
-  /// Origen HTTPS que se le da al WebView de Menzi DJ (como `baseUrl` de `loadHtmlString` y como
-  /// `origin` en los `playerVars` del IFrame Player). Sin esto el WebView carga la página con un
-  /// origen nulo/opaco (`about:blank`-like) y el embed de YouTube la rechaza con "Error 153 —
-  /// Error de configuración del reproductor de video", aunque el video sea perfectamente
-  /// reproducible en youtube.com. No hace falta que este dominio esté registrado en ningún lado
-  /// para este propósito puntual — el iframe API solo necesita un origen HTTP(S) bien formado
-  /// que coincida entre `baseUrl` y `origin`; alcanza con un dominio real controlado por Menzo.
+  /// Origen HTTPS real donde vive la página del reproductor de Menzi DJ (ver
+  /// menziDjPlayerUrl) — el WebView carga esa página de verdad vía `loadRequest`, ya NO con
+  /// `loadHtmlString`/`baseUrl` (un documento generado in-process con un origen sintético no
+  /// garantiza que Android WebView mande un HTTP Referer válido en los pedidos internos que hace
+  /// el iframe de YouTube, y ESO es lo que produce el error 153 — "missing Referer/API client
+  /// identity" — que es un código real y documentado de la YouTube IFrame Player API, no una
+  /// invención). Debe coincidir exactamente con el origen real que sirve esa página.
   static const String menziDjOrigin = String.fromEnvironment(
     'MENZI_DJ_ORIGIN',
     defaultValue: 'https://menzoweb.vercel.app',
   );
+
+  /// URL completa de la página estática del reproductor — ver
+  /// menzoweb/public/menzi-player.html.
+  static String get menziDjPlayerUrl => '$menziDjOrigin/menzi-player.html';
 }
