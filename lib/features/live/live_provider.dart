@@ -224,6 +224,17 @@ class LiveNotifier extends Notifier<LiveState> {
       final engine = createAgoraRtcEngine();
       await engine.initialize(RtcEngineContext(appId: token.appId));
       await engine.enableAudio();
+      // `channelProfileCommunication` (el perfil correcto para un LIVE de voz simple) tiene como
+      // ruta de audio POR DEFECTO el auricular de arriba (volumen bajísimo, pensado para
+      // sostener el teléfono contra la oreja) — así lo documenta la propia Agora: "Voice call:
+      // Earpiece". Nada lo cambiaba, así que tanto las voces como el audio del WebView de Menzi
+      // DJ (que comparte la misma sesión de audio del proceso) salían por ahí en cada teléfono.
+      // Con una sola persona en la sala no se nota tanto (el que prueba se pone el teléfono en
+      // la oreja); apenas hay varias, el resto no escucha nada perceptible y parece que "el bot
+      // no suena" — en realidad sonaba, pero casi inaudible. Se fuerza altavoz para que tanto la
+      // llamada como Menzi DJ se escuchen a volumen normal en todos los dispositivos.
+      await engine.setDefaultAudioRouteToSpeakerphone(true);
+      await engine.setEnableSpeakerphone(true);
       _engine = engine;
 
       engine.registerEventHandler(
