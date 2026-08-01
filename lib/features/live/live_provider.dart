@@ -237,8 +237,14 @@ class LiveNotifier extends Notifier<LiveState> {
       // la oreja); apenas hay varias, el resto no escucha nada perceptible y parece que "el bot
       // no suena" — en realidad sonaba, pero casi inaudible. Se fuerza altavoz para que tanto la
       // llamada como Menzi DJ se escuchen a volumen normal en todos los dispositivos.
-      await engine.setDefaultAudioRouteToSpeakerphone(true);
-      await engine.setEnableSpeakerphone(true);
+      //
+      // `try/catch` a propósito: esto es una preferencia de audio, nunca debe poder tumbar la
+      // conexión entera al LIVE si algún OEM/versión de Android la rechaza — antes una falla acá
+      // (antes de siquiera unirse al canal) abortaba TODO el intento de conectar, dejando al
+      // usuario de nuevo en la pantalla de "Escuchar" sin ningún LIVE, sin aviso de qué pasó.
+      try {
+        await engine.setDefaultAudioRouteToSpeakerphone(true);
+      } catch (_) {}
       _engine = engine;
 
       engine.registerEventHandler(
@@ -324,6 +330,14 @@ class LiveNotifier extends Notifier<LiveState> {
         connecting: false,
         myRole: session.myRole,
       );
+      // Agora documenta `setEnableSpeakerphone` como la ruta de audio "del canal actual" —a
+      // diferencia de `setDefaultAudioRouteToSpeakerphone` (seguro de llamar antes de unirse),
+      // este solo tiene sentido pedirlo una vez adentro del canal. Best-effort: si falla, la
+      // llamada de todas formas ya está conectada (lo importante), solo puede quedar en
+      // auricular en vez de altavoz en ese dispositivo puntual.
+      try {
+        await engine.setEnableSpeakerphone(true);
+      } catch (_) {}
       _subscribeLiveEvents(roomId);
       _startHeartbeat(roomId);
       await refreshParticipants(roomId);
@@ -343,8 +357,20 @@ class LiveNotifier extends Notifier<LiveState> {
         );
       }
     } catch (e) {
+      // `clearActiveRoomId`/`connected: false` a propósito: si el fallo ocurrió DESPUÉS de que
+      // ya se habían puesto en true (por ejemplo, un refresco de participantes que falló justo
+      // tras conectar el canal de Agora), sin esto el estado quedaba a medio camino — la UI
+      // creía seguir conectada a este roomId aunque `_cleanupEngine()` ya hubiera liberado el
+      // motor real, y como el guard de arriba (`state.activeRoomId == roomId`) hace que un
+      // reintento se ignore silenciosamente, la pantalla de "Escuchar" volvía a aparecer pero
+      // tocarla ya no hacía nada. Ahora cualquier fallo dentro de este bloque deja un estado
+      // limpio y consistente, listo para reintentar de verdad.
       state = state.copyWith(
         connecting: false,
+        connected: false,
+        clearActiveRoomId: true,
+        clearSession: true,
+        clearMyRole: true,
         lastMicrophoneError: 'No pudimos conectar al LIVE. Intenta de nuevo.',
       );
       await _cleanupEngine();
@@ -512,8 +538,17 @@ class LiveNotifier extends Notifier<LiveState> {
       ref.read(liveRepositoryProvider).cancelSpeakRequest(roomId);
 
   Future<void> refreshParticipants(String roomId) async {
-    final list = await ref.read(liveRepositoryProvider).participants(roomId);
-    state = state.copyWith(participants: list);
+    try {
+      final list = await ref.read(liveRepositoryProvider).participants(roomId);
+      state = state.copyWith(participants: list);
+    } catch (_) {
+      // No debe poder tumbar el flujo de `join()` — antes, sin este try/catch, un fallo acá
+      // (llamado justo después de conectar el canal de Agora) se propagaba hasta el catch de
+      // `join()` DESPUÉS de que `activeRoomId`/`connected` ya se habían puesto en true, dejando
+      // el estado a medio camino: la UI creía estar conectada pero el motor ya se había
+      // liberado. Un fallo puntual acá simplemente deja la lista de participantes vieja por un
+      // momento — se corrige solo con el próximo evento STOMP o el siguiente refresco.
+    }
   }
 
   Future<void> refreshSpeakingRequests(String roomId) async {

@@ -134,9 +134,14 @@ class _LiveRoomPanelState extends ConsumerState<LiveRoomPanel> {
           ? Center(
               child: MenziIllustrationState(
                 image: MenziIllustration.liveVoice,
+                // Antes, si `join()` fallaba (problema de red, Agora, lo que sea), el error
+                // quedaba guardado en `live.lastMicrophoneError` pero nunca se mostraba acá — el
+                // usuario solo veía el mismo cartel genérico de siempre, tocaba "Escuchar" de
+                // nuevo, y sin ninguna pista de qué había fallado parecía que "no pasaba nada".
                 description: live.connecting
                     ? 'Conectando…'
-                    : 'Conéctate para escuchar este LIVE.',
+                    : (live.lastMicrophoneError ??
+                          'Conéctate para escuchar este LIVE.'),
                 actionLabel: live.connecting ? null : 'Escuchar',
                 onAction: live.connecting
                     ? null
