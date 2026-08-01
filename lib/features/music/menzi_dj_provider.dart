@@ -24,6 +24,7 @@ class MenziDjState {
   const MenziDjState({
     this.session,
     this.loading = false,
+    this.loadError = false,
     this.expanded = false,
     this.videoHidden = false,
     this.localMuted = false,
@@ -35,6 +36,14 @@ class MenziDjState {
 
   final MusicSession? session;
   final bool loading;
+
+  /// true cuando el último `refresh()` falló Y todavía no hay ningún `session` previo para
+  /// mostrar en su lugar — antes cualquier fallo (un hipo de red, una respuesta lenta del
+  /// backend, etc.) borraba `session` directo a null sin distinción, y el panel mostraba
+  /// exactamente el mismo placeholder de "Busca una canción para comenzar" que el estado
+  /// genuinamente vacío — parecía que Menzi DJ "no cargaba nada" sin ninguna pista de que en
+  /// realidad había fallado una petición. Ver [MenziDjNotifier.refresh].
+  final bool loadError;
   final bool expanded;
 
   /// El usuario ocultó la vista previa flotante del video desde el panel de Menzi DJ — el
@@ -60,6 +69,7 @@ class MenziDjState {
     MusicSession? session,
     bool clearSession = false,
     bool? loading,
+    bool? loadError,
     bool? expanded,
     bool? videoHidden,
     bool? localMuted,
@@ -71,6 +81,7 @@ class MenziDjState {
   }) => MenziDjState(
     session: clearSession ? null : (session ?? this.session),
     loading: loading ?? this.loading,
+    loadError: loadError ?? this.loadError,
     expanded: expanded ?? this.expanded,
     videoHidden: videoHidden ?? this.videoHidden,
     localMuted: localMuted ?? this.localMuted,
@@ -306,6 +317,11 @@ class MenziDjNotifier extends Notifier<MenziDjState>
     final channel = StompChannel();
     _channel = channel;
     channel.connect(
+      // STOMP no reentrega eventos perdidos mientras el socket estuvo caído — sin este refetch,
+      // un corte de red breve (o el reinicio periódico del WebSocket del lado del backend)
+      // podía dejar la cola/canción actual desactualizada para siempre, hasta el próximo cambio
+      // real que alguien hiciera. Contribuía a la sensación de "Menzi DJ no carga bien".
+      onReconnected: refresh,
       onConnected: () {
         channel.subscribe('/topic/rooms/$roomId/music', (_) => refresh());
       },
@@ -461,13 +477,20 @@ class MenziDjNotifier extends Notifier<MenziDjState>
     _syncPlayerToSession(session);
   }
 
+  /// Se incrementa en cada llamada a [refresh] — si un reintento automático (ver más abajo)
+  /// llega a resolver DESPUÉS de que ya hubo un refresh más nuevo (exitoso o no), su resultado
+  /// se descarta en vez de pisar el estado actual con una respuesta obsoleta.
+  int _refreshRequestSeq = 0;
+
   Future<void> refresh() async {
     final roomId = _roomId;
     if (roomId == null) return;
+    final seq = ++_refreshRequestSeq;
     state = state.copyWith(loading: true);
     try {
       final session = await ref.read(musicRepositoryProvider).snapshot(roomId);
-      state = state.copyWith(loading: false);
+      if (seq != _refreshRequestSeq) return;
+      state = state.copyWith(loading: false, loadError: false);
       if (state.playerReady) {
         _applySession(session);
       } else {
@@ -475,7 +498,24 @@ class MenziDjNotifier extends Notifier<MenziDjState>
         state = state.copyWith(session: session);
       }
     } catch (_) {
-      state = state.copyWith(clearSession: true, loading: false);
+      if (seq != _refreshRequestSeq) return;
+      // Antes cualquier fallo (un hipo de red, el backend tardando en responder, etc.) borraba
+      // `session` a null sin distinción — la canción/cola que YA se estaban mostrando
+      // desaparecían de la pantalla como si nunca hubiera habido nada, sin ningún aviso. Ahora,
+      // si ya había una sesión cargada, se mantiene visible (sigue siendo la última info real
+      // que tenemos) y solo se marca `loadError` para que el panel pueda avisar; recién se
+      // limpia a "no hay sesión" si el fallo ocurre en la carga inicial, sin nada previo que
+      // mostrar. Un reintento automático a los 3s cubre el caso común de que haya sido un hipo
+      // pasajero (por ejemplo, el LIVE recién se creó y la primera lectura llegó un instante
+      // antes de que el backend terminara de confirmarlo).
+      state = state.copyWith(
+        loading: false,
+        loadError: true,
+        clearSession: state.session == null,
+      );
+      Future.delayed(const Duration(seconds: 3), () {
+        if (seq == _refreshRequestSeq) refresh();
+      });
     }
   }
 

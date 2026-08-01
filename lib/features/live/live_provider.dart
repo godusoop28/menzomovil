@@ -154,6 +154,10 @@ class LiveNotifier extends Notifier<LiveState> {
     _watchChannel?.dispose();
     _watchChannel = channel;
     channel.connect(
+      // Un corte de red breve mientras solo se está "mirando" la sala (sin unirse al audio)
+      // podía perderse el evento de que un LIVE arrancó/terminó justo durante ese lapso — STOMP
+      // no reentrega lo que pasó mientras el socket estuvo caído.
+      onReconnected: () => _refreshViewingState(roomId),
       onConnected: () {
         channel.subscribe('/topic/rooms/$roomId/live', (payload) {
           if (state.watchedRoomId != roomId) return;
@@ -580,6 +584,14 @@ class LiveNotifier extends Notifier<LiveState> {
     final channel = StompChannel();
     _liveChannel = channel;
     channel.connect(
+      // STOMP no reentrega eventos publicados mientras el socket estuvo caído — sin este
+      // refetch, un corte de red breve podía dejar la lista de participantes (o de solicitudes
+      // para hablar, si moderás) desactualizada para siempre, hasta el próximo evento que
+      // llegara a pasar. Mismo patrón que `onReconnected` en chat_room_screen.dart.
+      onReconnected: () {
+        refreshParticipants(roomId);
+        if (state.canModerate) refreshSpeakingRequests(roomId);
+      },
       onConnected: () {
         channel.subscribe('/topic/rooms/$roomId/live', (payload) {
           final type = payload['type'] as String?;

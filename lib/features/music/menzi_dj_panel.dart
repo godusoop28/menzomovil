@@ -153,6 +153,32 @@ class _MenziDjPanelBodyState extends ConsumerState<_MenziDjPanelBody>
               ],
             ),
           )
+        else if (music.loading)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 24),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (music.loadError)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Column(
+              children: [
+                Text(
+                  'No pudimos cargar Menzi DJ. Reintentando...',
+                  style: AppTextStyles.body(color: AppColors.coral),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 10),
+                TextButton(
+                  onPressed: () => ref.read(menziDjProvider.notifier).refresh(),
+                  style: TextButton.styleFrom(
+                    backgroundColor: AppColors.surfaceSecondary,
+                  ),
+                  child: const Text('Reintentar ahora'),
+                ),
+              ],
+            ),
+          )
         else
           const MenziIllustrationState(
             image: MenziIllustration.djHero,
@@ -160,6 +186,21 @@ class _MenziDjPanelBodyState extends ConsumerState<_MenziDjPanelBody>
             description: 'Busca una canción o pega un enlace para comenzar.',
             size: MenziIllustrationSize.small,
           ),
+        if (session != null && music.loadError) ...[
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              const Icon(Icons.sync_problem, size: 14, color: AppColors.textMuted),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'No se pudo actualizar Menzi DJ — mostrando la última info conocida.',
+                  style: AppTextStyles.caption(),
+                ),
+              ),
+            ],
+          ),
+        ],
         if (music.hasPlayerError) ...[
           const SizedBox(height: 10),
           _PlayerErrorBanner(
