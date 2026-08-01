@@ -214,6 +214,48 @@ class ApiClient {
     );
   }
 
+  /// Para STOMP: a diferencia de REST (que reacciona a un 401 real vía `_request`), un CONNECT
+  /// STOMP con un JWT vencido simplemente falla la conexión — no hay forma de "reintentar esta
+  /// petición puntual" después. Hay que asegurarse ANTES de conectar/reconectar. Decodifica el
+  /// `exp` del access token actual (sin verificar firma — no hace falta, el backend es quien
+  /// valida de verdad) y dispara el mismo refresh que usa REST si está por vencer o ya venció.
+  Future<String?> ensureFreshAccessToken() async {
+    final session = SessionStorage.instance.cached;
+    if (session == null) return null;
+    if (!_isCloseToExpiry(session.accessToken)) return session.accessToken;
+    final refreshed = await _refreshOnce();
+    if (refreshed) return SessionStorage.instance.cached?.accessToken;
+    // El refresh token también venció/es inválido — mismo tratamiento que el 401 de REST: no
+    // tiene sentido seguir reintentando con credenciales muertas, hay que loguear de nuevo.
+    await SessionStorage.instance.clear();
+    _sessionExpiredController.add(null);
+    return null;
+  }
+
+  static const _expirySkew = Duration(seconds: 30);
+
+  bool _isCloseToExpiry(String jwt) {
+    try {
+      final parts = jwt.split('.');
+      if (parts.length != 3) return false;
+      final normalized = base64Url.normalize(parts[1]);
+      final payload =
+          jsonDecode(utf8.decode(base64Url.decode(normalized)))
+              as Map<String, dynamic>;
+      final exp = payload['exp'];
+      if (exp is! int) return false;
+      final expiresAt = DateTime.fromMillisecondsSinceEpoch(
+        exp * 1000,
+        isUtc: true,
+      );
+      return DateTime.now().toUtc().isAfter(expiresAt.subtract(_expirySkew));
+    } catch (_) {
+      // Un token que no se puede decodificar no es asunto de este chequeo — que lo rechace el
+      // backend como corresponda; acá no bloqueamos la conexión por las dudas.
+      return false;
+    }
+  }
+
   Future<bool> _refreshOnce() {
     if (_refreshInFlight != null) return _refreshInFlight!.future;
     final completer = Completer<bool>();
