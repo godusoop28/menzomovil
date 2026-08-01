@@ -238,7 +238,22 @@ class LiveNotifier extends Notifier<LiveState> {
       _myUid = token.uid;
 
       final engine = createAgoraRtcEngine();
-      await engine.initialize(RtcEngineContext(appId: token.appId));
+      await engine.initialize(
+        RtcEngineContext(
+          appId: token.appId,
+          // El escenario de audio por default de Agora ("automatic scenario selection")
+          // termina, en la práctica, enrutando el audio como una llamada de voz normal —
+          // Android suele poner el dispositivo en modo comunicación para eso, que puede
+          // atenuar/mutear otras fuentes de audio del propio proceso mientras el motor de
+          // Agora sigue conectado (el WebView de Menzi DJ reproduce en foreground con
+          // webview_flutter, un pipeline de audio/video distinto al WebView nativo del
+          // hand-off a segundo plano — de ahí que uno sonara y el otro no). GameStreaming es
+          // el escenario que Agora documenta para "música" ("high-quality audio scenario,
+          // suitable for music-centric use cases"), pensado justo para no degradar audio que
+          // no es voz pura mientras el canal sigue activo.
+          audioScenario: AudioScenarioType.audioScenarioGameStreaming,
+        ),
+      );
       await engine.enableAudio();
       // `channelProfileCommunication` (el perfil correcto para un LIVE de voz simple) tiene como
       // ruta de audio POR DEFECTO el auricular de arriba (volumen bajísimo, pensado para
