@@ -13,7 +13,6 @@ class MainActivity : FlutterActivity() {
     private val audioChannelName = "com.sega2028.menzomovil/background_audio"
     private val bubbleChannelName = "com.sega2028.menzomovil/live_bubble"
     private val bubbleEventsName = "com.sega2028.menzomovil/live_bubble_events"
-    private val menziDjBackgroundChannelName = "com.sega2028.menzomovil/menzi_dj_background"
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -96,83 +95,6 @@ class MainActivity : FlutterActivity() {
                     val intent = Intent(this, LiveBubbleService::class.java)
                     intent.action = LiveBubbleService.ACTION_HIDE
                     startService(intent)
-                    result.success(null)
-                }
-                else -> result.notImplemented()
-            }
-        }
-
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, menziDjBackgroundChannelName).setMethodCallHandler { call, result ->
-            when (call.method) {
-                "warmUp" -> {
-                    // Se llama apenas hay una canción activa, con la app en primer plano —
-                    // deja lista la ventana/reproductor de fondo (montaje + carga del IFrame
-                    // API de YouTube, que implica un pedido de red) ANTES de que haga falta,
-                    // para que activate() sea instantáneo al minimizar de verdad.
-                    if (!canDrawOverlays()) {
-                        result.success(false)
-                    } else {
-                        result.success(
-                            MenziDjBackgroundPlayer.warmUp(
-                                context = applicationContext,
-                                origin = call.argument<String>("origin") ?: "https://menzoweb.vercel.app",
-                            ),
-                        )
-                    }
-                }
-                "activate" -> {
-                    if (!canDrawOverlays()) {
-                        // Sin overlay no hay dónde montar el WebView nativo — Dart no debe
-                        // pausar su propio WebView, la música sigue por el camino de siempre.
-                        result.success(false)
-                    } else {
-                        // Llamada síncrona (no Intent/Service) — el resultado que le llega a
-                        // Dart es el resultado REAL de intentar montar/activar la ventana
-                        // overlay, no una suposición optimista. Ver el comentario de clase en
-                        // MenziDjBackgroundPlayer.kt sobre por qué esto importa.
-                        val activated = MenziDjBackgroundPlayer.activate(
-                            context = applicationContext,
-                            origin = call.argument<String>("origin") ?: "https://menzoweb.vercel.app",
-                            videoId = call.argument<String>("videoId") ?: "",
-                            positionSeconds = call.argument<Double>("positionSeconds") ?: 0.0,
-                            playing = call.argument<Boolean>("playing") ?: true,
-                            muted = call.argument<Boolean>("muted") ?: false,
-                            volume = call.argument<Int>("volume") ?: 80,
-                        )
-                        result.success(activated)
-                    }
-                }
-                "updateTrack" -> {
-                    MenziDjBackgroundPlayer.updateTrack(
-                        videoId = call.argument<String>("videoId") ?: "",
-                        positionSeconds = call.argument<Double>("positionSeconds") ?: 0.0,
-                    )
-                    result.success(null)
-                }
-                "updateAudioState" -> {
-                    MenziDjBackgroundPlayer.updateAudioState(
-                        muted = call.argument<Boolean>("muted") ?: false,
-                        volume = call.argument<Int>("volume") ?: 80,
-                    )
-                    result.success(null)
-                }
-                "updatePlayback" -> {
-                    MenziDjBackgroundPlayer.updatePlayback(
-                        positionSeconds = call.argument<Double>("positionSeconds") ?: 0.0,
-                        playing = call.argument<Boolean>("playing") ?: true,
-                    )
-                    result.success(null)
-                }
-                "playbackState" -> {
-                    result.success(MenziDjBackgroundPlayer.playbackState())
-                }
-                "pauseAndReportPosition" -> {
-                    MenziDjBackgroundPlayer.pauseAndReportPosition { position ->
-                        result.success(mapOf("positionSeconds" to position))
-                    }
-                }
-                "teardown" -> {
-                    MenziDjBackgroundPlayer.teardown()
                     result.success(null)
                 }
                 else -> result.notImplemented()
