@@ -9,6 +9,24 @@ void main() {
       expect(YtPlayerError.isEmbedRestricted(100), isFalse);
     });
 
+    test('153 NUNCA se clasifica como embed restringido', () {
+      // 153 (falta de identidad del cliente ante YouTube) no tiene nada que ver con que el
+      // video sea o no embebible — tratarlo como 101/150 llevaría a marcar canciones
+      // perfectamente reproducibles como "no disponibles" y saltarlas de la cola sin motivo.
+      expect(YtPlayerError.isEmbedRestricted(153), isFalse);
+    });
+
+    test('153 es un código real reconocido, con mensaje propio', () {
+      expect(YtPlayerError.missingClientIdentity, 153);
+      expect(
+        YtPlayerError.describe(153),
+        'El reproductor móvil no pudo identificarse correctamente ante YouTube.',
+      );
+      // Nunca debe caer en el mensaje genérico "no pudimos reproducir este video (código ...)"
+      // que sí aplica a códigos realmente desconocidos.
+      expect(YtPlayerError.describe(153), isNot(contains('código 153')));
+    });
+
     test('describe da un mensaje distinto por código conocido', () {
       expect(YtPlayerError.describe(100), contains('no está disponible'));
       expect(YtPlayerError.describe(101), contains('no permite reproducirlo'));
