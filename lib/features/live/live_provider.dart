@@ -310,12 +310,24 @@ class LiveNotifier extends Notifier<LiveState> {
       // (no hay otro con quien chocar); apenas se suma una segunda persona real, Agora tiene
       // dos participantes reclamando la misma identidad en el mismo canal — de ahí que audio,
       // sincronización y todo lo demás se sintiera roto justo (y solo) con 2+ personas.
+      // `channelProfileCommunication` (perfil de llamada 1 a 1 estilo WhatsApp) es lo que se
+      // venía usando, pero la propia documentación del SDK de Agora lo dice explícito: "Agora
+      // recommends using the live broadcasting profile for a better audio and video
+      // experience." Esta sala es exactamente el escenario de una "sala de audio en vivo"
+      // (host/co-host/hablantes + audiencia + música de fondo) para el que existe
+      // `channelProfileLiveBroadcasting` — el perfil de llamada aplica un procesamiento de voz
+      // pensado para tener el teléfono pegado a la boca (de ahí el micrófono sonando bajo) y
+      // compite más agresivamente por el foco de audio de Android contra la reproducción del
+      // WebView de Menzi DJ (de ahí que la música dejara de escuchársele a quien no fuera quien
+      // la controlaba). Además, `clientRoleType` (broadcaster/audience, la distinción real
+      // entre quién puede hablar y quién no) solo tiene efecto real a nivel del SDK bajo este
+      // perfil — bajo el de llamada era un valor sin efecto práctico.
       await engine.joinChannelWithUserAccount(
         token: token.token,
         channelId: token.channelName,
         userAccount: token.uid,
         options: ChannelMediaOptions(
-          channelProfile: ChannelProfileType.channelProfileCommunication,
+          channelProfile: ChannelProfileType.channelProfileLiveBroadcasting,
           clientRoleType: canSpeak
               ? ClientRoleType.clientRoleBroadcaster
               : ClientRoleType.clientRoleAudience,
