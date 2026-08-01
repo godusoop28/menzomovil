@@ -4,8 +4,18 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 import 'menzi_dj_provider.dart';
 
-const _expandedWidth = 200.0;
-const _expandedHeight = 112.0;
+const _expandedWidth = 280.0;
+const _expandedHeight = 200.0;
+
+// YouTube no garantiza un embed confiable por debajo de este tamaño — y, más importante
+// todavía, un WebView con una superficie de renderizado casi nula (el 1×1 con Opacity 0 que
+// usaba esta pantalla antes) es tratado por Chromium como una vista inactiva, que puede
+// suspender no solo el render sino también la reproducción. Por eso el estado "mini" (panel no
+// expandido) sigue siendo un WebView de tamaño real dentro del viewport, nunca 1×1/Opacity 0/
+// fuera de pantalla — se lo tapa con controles propios reales (la mini-bar, que se pinta encima
+// en el mismo Stack de AppShell), no con trucos de invisibilidad sobre el WebView.
+const _miniWidth = 200.0;
+const _miniHeight = 200.0;
 
 /// Único WebView del reproductor oficial de YouTube para toda la app — vive montado siempre
 /// (ver AppShell), y solo cambia de tamaño entre invisible / miniatura / expandido. Nunca se
@@ -40,21 +50,26 @@ class _MenziDjPlayerHostState extends ConsumerState<MenziDjPlayerHost> {
       );
     }
 
-    // El video visible solo aparece si el panel lo pidió expandido Y el usuario no lo ocultó
-    // desde ahí — en cualquier otro caso el WebView sigue montado igual (el audio no se
-    // interrumpe), solo se deja de mostrar/mover el recuadro. CRÍTICO: nunca a tamaño 1×1 con
-    // Opacity 0 acá — Chromium (WebView de Android) trata una superficie prácticamente sin
-    // área visible como inactiva y puede suspender su reproducción, no solo su render, lo que
-    // explicaba por qué el segundo usuario (que nunca tenía el panel expandido) no escuchaba
-    // Menzi DJ estando DENTRO de la app. Mismas dimensiones reales que el estado expandido,
-    // solo que posicionado fuera del viewport — visible para Chromium, invisible para el ojo.
+    // El video se ve más grande y arrastrable solo si el panel lo pidió expandido Y el usuario
+    // no lo ocultó desde ahí. En cualquier otro caso el WebView sigue reproduciendo igual (el
+    // audio no se interrumpe) como un mini reproductor real y visible en una esquina fija —
+    // NUNCA a tamaño 1×1, con Opacity 0, en Offstage, ni con coordenadas negativas que lo saquen
+    // del viewport: eso es justo lo que causaba que el segundo usuario (que nunca tenía el panel
+    // expandido) no escuchara Menzi DJ estando DENTRO de la app — Chromium trata una superficie
+    // de renderizado prácticamente nula como una vista inactiva y puede suspender también la
+    // reproducción, no solo el render.
     if (!music.expanded || music.videoHidden) {
       return Positioned(
-        left: -_expandedWidth - 50,
-        top: -_expandedHeight - 50,
-        width: _expandedWidth,
-        height: _expandedHeight,
-        child: IgnorePointer(child: WebViewWidget(controller: controller)),
+        left: 8,
+        bottom: 8,
+        width: _miniWidth,
+        height: _miniHeight,
+        child: IgnorePointer(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: WebViewWidget(controller: controller),
+          ),
+        ),
       );
     }
 
