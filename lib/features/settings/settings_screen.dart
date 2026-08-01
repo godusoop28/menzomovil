@@ -96,6 +96,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             onChanged: _toggleBubble,
           ),
           const SizedBox(height: 20),
+          Text('Diagnóstico', style: AppTextStyles.caption()),
+          const SizedBox(height: 8),
+          ListTile(
+            tileColor: AppColors.surfaceSecondary,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+            title: const Text('Diagnóstico de YouTube'),
+            subtitle: const Text(
+              'Prueba el reproductor aislado, sin LIVE ni Menzi DJ',
+            ),
+            onTap: () => context.push('/debug/youtube-player'),
+          ),
+          const SizedBox(height: 20),
           async.when(
             data: (settings) {
               _settings ??= settings;
