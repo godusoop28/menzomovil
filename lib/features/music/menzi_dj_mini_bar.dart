@@ -26,10 +26,51 @@ class MenziDjMiniBar extends ConsumerWidget {
     final panelOpen = ref.watch(isLiveRoomPanelOpenProvider);
     final hiddenHere = location == '/chat/${live.activeRoomId}' || panelOpen;
 
-    if (!music.hasTrack ||
-        music.expanded ||
-        live.activeRoomId == null ||
-        hiddenHere) {
+    if (!music.hasTrack || live.activeRoomId == null) {
+      return const SizedBox.shrink();
+    }
+
+    // Independiente de dónde esté navegando o si el panel está minimizado — un audio realmente
+    // silenciado (ver menzi_dj_player_html.dart/scheduleBlockCheck) es más urgente que respetar
+    // el resto de la lógica de "dónde se oculta la mini-barra": sin este aviso, el usuario ve
+    // "reproduciendo" y no escucha nada, sin ninguna pista de qué hacer al respecto.
+    if (music.autoplayBlocked) {
+      return Positioned(
+        left: 16,
+        right: 16,
+        bottom: 150,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(AppRadius.pill),
+            onTap: () =>
+                ref.read(menziDjProvider.notifier).enableAudioAfterGesture(),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceElevated,
+                borderRadius: BorderRadius.circular(AppRadius.pill),
+                border: Border.all(color: AppColors.cyan),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.volume_off, color: AppColors.cyan),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Toca para activar el audio de Menzi DJ',
+                      style: AppTextStyles.label(color: AppColors.textPrimary),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (music.expanded || hiddenHere) {
       return const SizedBox.shrink();
     }
 

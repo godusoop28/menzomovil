@@ -110,6 +110,42 @@ class MenziDjBackgroundChannel {
     }
   }
 
+  /// Estado real reportado por el WebView nativo (`ready`/`state`/`error` — ver
+  /// MenziDjBackgroundPlayer.playbackState). `null` si no es Android o falló el canal.
+  static Future<Map<String, dynamic>?> getPlaybackState() async {
+    if (!Platform.isAndroid) return null;
+    try {
+      final result = await _channel.invokeMethod<Map>('playbackState');
+      return result?.cast<String, dynamic>();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Espera una confirmación REAL de que YouTube arrancó a reproducir en el WebView nativo de
+  /// fondo (`state` == PLAYING o BUFFERING — ver YtPlayerState) antes de que el llamador pause
+  /// su propio reproductor. Un `activate()` exitoso solo prueba que la ventana overlay se montó
+  /// y los comandos se encolaron — nunca que YouTube ya esté sonando ahí. Sin esta confirmación,
+  /// un fallo silencioso (permiso revocado a mitad de camino, video con error, WebView del OEM
+  /// que ignora el comando) dejaba la música completamente muda: el de primer plano ya pausado,
+  /// el de fondo nunca arrancó de verdad.
+  static Future<bool> confirmPlaybackStarted({
+    Duration timeout = const Duration(seconds: 2),
+    Duration pollEvery = const Duration(milliseconds: 250),
+  }) async {
+    if (!Platform.isAndroid) return false;
+    final deadline = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(deadline)) {
+      final result = await getPlaybackState();
+      final state = result?['state'] as int?;
+      // 1 = playing, 3 = buffering (ver YtPlayerState en menzi_dj_player_html.dart) — buffering
+      // cuenta como "en camino de verdad", no como fallo.
+      if (state == 1 || state == 3) return true;
+      await Future.delayed(pollEvery);
+    }
+    return false;
+  }
+
   /// Destruye de verdad la ventana/WebView de fondo — solo al salir del LIVE o terminar la
   /// sesión de Menzi DJ, no en cada ida y vuelta de primer/segundo plano.
   static Future<void> teardown() async {

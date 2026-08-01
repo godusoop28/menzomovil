@@ -30,10 +30,38 @@ String menziDjPlayerHtml(String origin) =>
     var ready = false;
     var pendingVideoId = null;
     var currentVideoId = null;
+    var blockCheckTimer = null;
 
     function post(message) {
       if (window.MenziBridge) {
         window.MenziBridge.postMessage(JSON.stringify(message));
+      }
+    }
+
+    // No basta con llamar playVideo()/unMute() y asumir que ya suena — un WebView/OEM que
+    // ignore la configuración de "no requiere gesto del usuario" (ver
+    // AndroidWebViewController.setMediaPlaybackRequiresUserGesture(false) y
+    // WebKitWebViewControllerCreationParams.mediaTypesRequiringUserAction en el lado Dart)
+    // puede aceptar el comando en silencio sin que el audio realmente arranque. Este margen le
+    // da tiempo al player de pasar por BUFFERING legítimo antes de considerar que quedó
+    // bloqueado — si a los 2.5s no está ni reproduciendo ni bufferizando, se avisa a Dart en vez
+    // de seguir mostrando "reproduciendo" sobre un player que en los hechos está mudo/parado.
+    function scheduleBlockCheck() {
+      if (blockCheckTimer) clearTimeout(blockCheckTimer);
+      blockCheckTimer = setTimeout(function () {
+        blockCheckTimer = null;
+        if (!player) return;
+        var s = player.getPlayerState();
+        if (s !== 1 && s !== 3) {
+          post({ type: 'autoplayBlocked' });
+        }
+      }, 2500);
+    }
+
+    function cancelBlockCheck() {
+      if (blockCheckTimer) {
+        clearTimeout(blockCheckTimer);
+        blockCheckTimer = null;
       }
     }
 
@@ -62,6 +90,7 @@ String menziDjPlayerHtml(String origin) =>
             }
           },
           onStateChange: function (event) {
+            if (event.data === 1) cancelBlockCheck();
             post({ type: 'stateChange', state: event.data });
           },
           onError: function (event) {
@@ -81,12 +110,22 @@ String menziDjPlayerHtml(String origin) =>
       switch (msg.cmd) {
         case 'load':
           currentVideoId = msg.videoId;
-          player.loadVideoById(msg.videoId);
+          // Con posición inicial en el mismo loadVideoById (en vez de cargar y mandar un seek
+          // aparte inmediatamente después) evita una carrera entre dos llamadas JS separadas —
+          // relevante sobre todo para quien entra tarde a una canción ya empezada (ver Fase 11):
+          // el video arranca directo cerca de la posición real, no desde 0 con un salto detrás.
+          if (typeof msg.startSeconds === 'number') {
+            player.loadVideoById({ videoId: msg.videoId, startSeconds: msg.startSeconds });
+          } else {
+            player.loadVideoById(msg.videoId);
+          }
           break;
         case 'play':
           player.playVideo();
+          scheduleBlockCheck();
           break;
         case 'pause':
+          cancelBlockCheck();
           player.pauseVideo();
           break;
         case 'seek':
@@ -98,12 +137,20 @@ String menziDjPlayerHtml(String origin) =>
         case 'unmute':
           player.unMute();
           if (typeof msg.volume === 'number') player.setVolume(msg.volume);
+          scheduleBlockCheck();
           break;
         case 'volume':
           player.setVolume(msg.volume);
           break;
         case 'getTime':
           post({ type: 'time', seconds: player.getCurrentTime(), state: player.getPlayerState() });
+          break;
+        case 'setRate':
+          // Corrección suave de drift (Fase 9): un empujón de velocidad temporal en vez de un
+          // seek audible para desincronizaciones chicas. setPlaybackRate ajusta al valor
+          // soportado más cercano solo; no hace falta round-trip a getAvailablePlaybackRates()
+          // para este uso (nunca se pide algo lejos de 1.0).
+          player.setPlaybackRate(msg.rate);
           break;
       }
     };

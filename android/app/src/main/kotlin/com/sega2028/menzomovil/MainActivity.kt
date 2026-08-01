@@ -163,6 +163,9 @@ class MainActivity : FlutterActivity() {
                     )
                     result.success(null)
                 }
+                "playbackState" -> {
+                    result.success(MenziDjBackgroundPlayer.playbackState())
+                }
                 "pauseAndReportPosition" -> {
                     MenziDjBackgroundPlayer.pauseAndReportPosition { position ->
                         result.success(mapOf("positionSeconds" to position))

@@ -45,6 +45,16 @@ object MenziDjBackgroundPlayer {
     private var ready = false
     private var applyOnReady: (() -> Unit)? = null
 
+    /** Último `YT.PlayerState` reportado por el bridge del WebView de fondo — antes esta clase
+     * no escuchaba `onStateChange`/`onError` para nada, así que [activate] devolvía `true` en
+     * cuanto la ventana overlay montaba, sin ninguna garantía de que YouTube hubiera arrancado a
+     * reproducir de verdad ahí adentro. Dart ahora puede pedir [playbackState] después de
+     * `activate` y esperar una confirmación real (`state == playing/buffering`) antes de pausar
+     * su propio WebView — ver `MenziDjBackgroundChannel.confirmPlaybackStarted` y
+     * `MenziDjNotifier._handleAppBackgrounded`. */
+    private var lastState: Int? = null
+    private var lastError: Int? = null
+
     /** Deja lista la ventana/reproductor de fondo (muteado y sin reproducir nada todavía) para
      * que, llegado el momento real de pasar a segundo plano, [activate] sea instantáneo — no
      * hay pedido de red pendiente en ese momento. Seguro de llamar varias veces (no-op si ya
@@ -143,7 +153,19 @@ object MenziDjBackgroundPlayer {
         windowManager = null
         ready = false
         applyOnReady = null
+        lastState = null
+        lastError = null
     }
+
+    /** Snapshot del estado real reportado por el bridge — `ready` sin más no alcanza (un video
+     * puede quedar `ready` pero nunca pasar a PLAYING por un error o un bloqueo silencioso del
+     * WebView). Dart lo usa para decidir si de verdad puede confiar en que el audio de fondo
+     * está sonando antes de pausar su propio reproductor. */
+    fun playbackState(): Map<String, Any?> = mapOf(
+        "ready" to ready,
+        "state" to lastState,
+        "error" to lastError,
+    )
 
     @SuppressLint("SetJavaScriptEnabled")
     private fun tryAttach(context: Context, origin: String): Boolean {
@@ -162,9 +184,13 @@ object MenziDjBackgroundPlayer {
                     fun postMessage(message: String) {
                         try {
                             val json = JSONObject(message)
-                            if (json.optString("type") == "ready") {
-                                ready = true
-                                applyOnReady?.invoke()
+                            when (json.optString("type")) {
+                                "ready" -> {
+                                    ready = true
+                                    applyOnReady?.invoke()
+                                }
+                                "stateChange" -> lastState = json.optInt("state")
+                                "error" -> lastError = json.optInt("code")
                             }
                         } catch (e: Exception) {
                             Log.w(TAG, "mensaje del bridge inválido", e)
@@ -236,7 +262,9 @@ object MenziDjBackgroundPlayer {
                 width: '100%', height: '100%',
                 playerVars: { autoplay: 1, mute: 1, playsinline: 1, controls: 0, modestbranding: 1, rel: 0, origin: '$origin', enablejsapi: 1 },
                 events: {
-                  onReady: function(){ ready = true; post({type:'ready'}); if (pendingVideoId){ player.loadVideoById(pendingVideoId); pendingVideoId = null; } }
+                  onReady: function(){ ready = true; post({type:'ready'}); if (pendingVideoId){ player.loadVideoById(pendingVideoId); pendingVideoId = null; } },
+                  onStateChange: function(e){ post({type:'stateChange', state:e.data}); },
+                  onError: function(e){ post({type:'error', code:e.data}); }
                 }
               });
             }

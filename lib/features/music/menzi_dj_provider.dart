@@ -8,6 +8,7 @@ import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 
 import '../../core/config/app_config.dart';
+import '../../core/diagnostics/device_session.dart';
 import '../../core/native/menzi_dj_background_channel.dart';
 import '../../core/network/api_exception.dart';
 import '../../core/network/stomp_service.dart';
@@ -17,8 +18,42 @@ import '../live/live_provider.dart';
 import 'menzi_dj_player_html.dart';
 
 const _driftCheckInterval = Duration(seconds: 15);
-const _driftThresholdSeconds = 2;
+// Bandas de corrección (Fase 9): <1.5s no se toca nada; 1.5-4s corrección suave (playback rate
+// temporal); >4s salto directo. Sin la banda intermedia, cualquier drift chico terminaba en un
+// `seek` perceptible (un salto de audio) cada 15s con solo un poco de desincronización de red.
+const _driftSoftBandSeconds = 1.5;
+const _driftHardBandSeconds = 4.0;
 const _defaultVolume = 80;
+
+/// Decisión de versionado (Fase 3): un evento solo se aplica si trae una versión más nueva que
+/// la que ya tenemos — sin versión (null) se aplica igual (algunos payloads no la incluyen), sin
+/// sesión previa también se aplica (primera vez). Extraída como función libre de estado (no
+/// depende de `this`/`state`) para poder cubrir con un test unitario simple los casos de
+/// duplicado/reenvío/desorden sin tener que levantar todo el Notifier (WebView, StompChannel,
+/// etc.) — ver menzi_dj_provider_test.dart.
+bool shouldApplyMusicEventVersion({
+  required int? incomingVersion,
+  required int? currentVersion,
+}) {
+  if (incomingVersion == null || currentVersion == null) return true;
+  return incomingVersion > currentVersion;
+}
+
+/// Bandas de corrección de drift (Fase 9) — ver comentario de las constantes arriba. Función
+/// pura (sin `_sendCommand`/estado) para poder testear las bandas exactas sin un WebView real.
+enum DriftAction { none, softCorrect, hardSeek }
+
+DriftAction classifyDrift(double signedDrift) {
+  final absDrift = signedDrift.abs();
+  if (absDrift > _driftHardBandSeconds) return DriftAction.hardSeek;
+  if (absDrift > _driftSoftBandSeconds) return DriftAction.softCorrect;
+  return DriftAction.none;
+}
+
+/// Playback rate a aplicar para una corrección suave: atrasado (drift negativo) → acelerar;
+/// adelantado (drift positivo) → frenar.
+double softCorrectionRateFor(double signedDrift) =>
+    signedDrift < 0 ? 1.25 : 0.75;
 
 class MenziDjState {
   const MenziDjState({
@@ -32,6 +67,7 @@ class MenziDjState {
     this.playerReady = false,
     this.playerErrorCode,
     this.playerErrorVideoId,
+    this.autoplayBlocked = false,
   });
 
   final MusicSession? session;
@@ -61,6 +97,12 @@ class MenziDjState {
   final int? playerErrorCode;
   final String? playerErrorVideoId;
 
+  /// El WebView/OEM aceptó el comando play/unmute pero el player nunca llegó a reproducir de
+  /// verdad (ver `scheduleBlockCheck` en menzi_dj_player_html.dart) — mientras esto sea true, la
+  /// UI no puede mostrar "reproduciendo": tiene que ofrecer un botón real para que el usuario
+  /// habilite el audio con un toque genuino.
+  final bool autoplayBlocked;
+
   bool get hasTrack => session?.currentVideoId != null;
   bool get hasPlayerError =>
       playerErrorCode != null && playerErrorVideoId == session?.currentVideoId;
@@ -78,6 +120,7 @@ class MenziDjState {
     int? playerErrorCode,
     bool clearPlayerError = false,
     String? playerErrorVideoId,
+    bool? autoplayBlocked,
   }) => MenziDjState(
     session: clearSession ? null : (session ?? this.session),
     loading: loading ?? this.loading,
@@ -93,6 +136,7 @@ class MenziDjState {
     playerErrorVideoId: clearPlayerError
         ? null
         : (playerErrorVideoId ?? this.playerErrorVideoId),
+    autoplayBlocked: autoplayBlocked ?? this.autoplayBlocked,
   );
 }
 
@@ -106,10 +150,17 @@ class MenziDjNotifier extends Notifier<MenziDjState>
   WebViewController? _controller;
   StompChannel? _channel;
   Timer? _driftTimer;
+  Timer? _reconciliationTimer;
   String? _roomId;
   String? _loadedVideoId;
   MusicSessionStatus? _lastAppliedStatus;
   void Function(double seconds)? _pendingTimeRequest;
+
+  /// true una vez que el usuario ya tocó el botón de "Habilitar audio" en esta sesión de
+  /// LIVE/Menzi DJ — a partir de acá, un `autoplayBlocked` de una canción siguiente no vuelve a
+  /// mostrar el aviso (se reintenta play/unmute solo, en silencio); pedirlo de nuevo en cada
+  /// canción sería exactamente el tipo de fricción que el pedido original marcó como prohibida.
+  bool _audioGestureGranted = false;
 
   /// true mientras el audio lo está reproduciendo el WebView nativo en segundo plano
   /// (`MenziDjBackgroundPlayer`, Android) en vez del WebView de Flutter — ver
@@ -248,7 +299,24 @@ class MenziDjNotifier extends Notifier<MenziDjState>
     // Si mientras tanto ya volvimos a primer plano (u otro ciclo empezó), esta respuesta llegó
     // tarde — no pisar el estado actual pausando algo que el usuario ya está mirando.
     if (generation != _lifecycleGeneration) return;
-    if (handedOff) {
+    // `activate()` en true solo prueba que la ventana overlay se montó y los comandos se
+    // encolaron — no que YouTube ya esté sonando ahí adentro (ver comentario de clase en
+    // MenziDjBackgroundPlayer.kt). Sin esta confirmación real, un fallo silencioso del lado
+    // nativo (video con error, WebView de un OEM que ignora el comando, permiso revocado a
+    // mitad de camino) dejaba la música completamente muda: acá ya habíamos pausado el WebView
+    // de Flutter, y el de fondo nunca llegó a arrancar de verdad.
+    final confirmed =
+        handedOff && await MenziDjBackgroundChannel.confirmPlaybackStarted();
+    if (generation != _lifecycleGeneration) return;
+    if (handedOff && !confirmed) {
+      debugPrint(
+        '[MenziDJ][${DeviceSession.id}] hand-off a segundo plano no confirmado — se mantiene el WebView de Flutter',
+      );
+    }
+    if (confirmed) {
+      debugPrint(
+        '[MenziDJ][${DeviceSession.id}] background handoff confirmed at position=${expectedPosition.toStringAsFixed(2)}',
+      );
       _isBackgrounded = true;
       _lastBackgroundAppliedStatus = session.status;
       _backgroundHandoffPosition = expectedPosition;
@@ -278,6 +346,9 @@ class MenziDjNotifier extends Notifier<MenziDjState>
     _isBackgrounded = false;
     final reported = await MenziDjBackgroundChannel.pauseAndReportPosition();
     final position = _resolveForegroundPosition(reported);
+    debugPrint(
+      '[MenziDJ][${DeviceSession.id}] foreground restore: reported=$reported resolved=$position',
+    );
     _backgroundHandoffPosition = null;
     _backgroundHandoffAt = null;
     _lastBackgroundAppliedStatus = null;
@@ -308,7 +379,6 @@ class MenziDjNotifier extends Notifier<MenziDjState>
   }
 
   void _setup(String roomId) {
-    refresh();
     // Precalienta el reproductor de fondo ya mismo (con la app todavía en primer plano) —
     // montar la ventana overlay + cargar el IFrame API de YouTube implica un pedido de red que
     // NO queremos pagar recién en el instante de minimizar (ver comentario de clase en
@@ -316,16 +386,15 @@ class MenziDjNotifier extends Notifier<MenziDjState>
     MenziDjBackgroundChannel.warmUp(origin: AppConfig.menziDjOrigin);
     final channel = StompChannel();
     _channel = channel;
-    channel.connect(
-      // STOMP no reentrega eventos perdidos mientras el socket estuvo caído — sin este refetch,
-      // un corte de red breve (o el reinicio periódico del WebSocket del lado del backend)
-      // podía dejar la cola/canción actual desactualizada para siempre, hasta el próximo cambio
-      // real que alguien hiciera. Contribuía a la sensación de "Menzi DJ no carga bien".
-      onReconnected: refresh,
-      onConnected: () {
-        channel.subscribe('/topic/rooms/$roomId/music', (_) => refresh());
-      },
-    );
+    // Orden crítico: la suscripción se registra ANTES de conectar. `StompChannel.connect` manda
+    // el frame SUBSCRIBE real (dentro de su propio `onConnect`) antes de invocar este
+    // `onConnected`, así que para cuando `refresh()` corre acá abajo la suscripción ya está
+    // activa — una canción que arranque justo en el medio no puede colarse por el hueco que
+    // había antes (refresh() disparado ANTES de conectar/suscribirse, corriendo en paralelo con
+    // el handshake STOMP). `onConnected` se llama en la primera conexión Y en cada reconexión
+    // (ver StompChannel), así que este mismo snapshot de reconciliación se repite solo cada vez.
+    channel.subscribe('/topic/rooms/$roomId/music', _handleMusicEvent);
+    channel.connect(onConnected: refresh);
     _driftTimer = Timer.periodic(_driftCheckInterval, (_) {
       // Mientras la app está en segundo plano el WebView de Flutter está pausado de verdad (es
       // el nativo quien reproduce) — pedirle `getTime`/seekearlo en ese estado comparaba una
@@ -345,12 +414,35 @@ class MenziDjNotifier extends Notifier<MenziDjState>
           DateTime.now().difference(snapshotAt).inMilliseconds / 1000;
       final expectedPosition = current.positionSeconds + elapsed;
       _pendingTimeRequest = (seconds) {
-        final drift = (seconds - expectedPosition).abs();
-        if (drift > _driftThresholdSeconds) {
+        // Con signo: negativo = el player va atrás del esperado, positivo = va adelante.
+        final drift = seconds - expectedPosition;
+        final action = classifyDrift(drift);
+        if (action != DriftAction.none) {
+          debugPrint(
+            '[MenziDJ][${DeviceSession.id}] drift=${drift.toStringAsFixed(2)}s expected=${expectedPosition.toStringAsFixed(2)} actual=${seconds.toStringAsFixed(2)} action=$action',
+          );
+        }
+        if (action == DriftAction.hardSeek) {
           _sendCommand('seek', {'seconds': expectedPosition});
+          _sendCommand('setRate', {'rate': 1.0});
+        } else if (action == DriftAction.softCorrect) {
+          // Corrección suave: un empujón de velocidad temporal en vez de un seek audible, y
+          // volver a 1.0x solo.
+          _sendCommand('setRate', {'rate': softCorrectionRateFor(drift)});
+          Future.delayed(const Duration(seconds: 3), () {
+            if (!_isBackgrounded) _sendCommand('setRate', {'rate': 1.0});
+          });
         }
       };
       _sendCommand('getTime');
+    });
+    // Reconciliación defensiva (Fase 10): aunque STOMP funcione, un mensaje puntual se puede
+    // perder sin que nada lo note (un blip de red exactamente durante el heartbeat, un bug de
+    // otro cliente, etc.) — un GET del snapshot real cada ~25s mientras hay LIVE activo en
+    // primer plano corrige eso solo, sin recrear el reproductor ni el WebView (refresh() ya
+    // aplica el snapshot solo si de verdad cambió algo, vía _onSnapshotReceived/_applySession).
+    _reconciliationTimer = Timer.periodic(const Duration(seconds: 25), (_) {
+      if (!_isBackgrounded) refresh();
     });
   }
 
@@ -359,6 +451,8 @@ class MenziDjNotifier extends Notifier<MenziDjState>
     _channel = null;
     _driftTimer?.cancel();
     _driftTimer = null;
+    _reconciliationTimer?.cancel();
+    _reconciliationTimer = null;
     _loadedVideoId = null;
     _lastAppliedStatus = null;
     _sessionSnapshotAt = null;
@@ -367,6 +461,7 @@ class MenziDjNotifier extends Notifier<MenziDjState>
     _lastBackgroundAppliedStatus = null;
     _backgroundHandoffPosition = null;
     _backgroundHandoffAt = null;
+    _audioGestureGranted = false;
     // Recién acá se destruye de verdad el reproductor de fondo — dejarlo precalentado durante
     // toda la sesión (ver [_setup]) solo tiene sentido mientras siga habiendo un LIVE/Menzi DJ
     // activo al que volver.
@@ -396,19 +491,51 @@ class MenziDjNotifier extends Notifier<MenziDjState>
     }
     final type = msg['type'] as String?;
     if (type == 'ready') {
+      debugPrint('[MenziDJ][${DeviceSession.id}] player ready');
       state = state.copyWith(playerReady: true);
       _syncPlayerToSession(state.session);
     } else if (type == 'time' && msg['seconds'] is num) {
       _pendingTimeRequest?.call((msg['seconds'] as num).toDouble());
       _pendingTimeRequest = null;
     } else if (type == 'error' && msg['code'] is num) {
+      debugPrint(
+        '[MenziDJ][${DeviceSession.id}] player error code=${msg['code']} videoId=${msg['videoId'] ?? _loadedVideoId}',
+      );
       state = state.copyWith(
         playerErrorCode: (msg['code'] as num).toInt(),
         playerErrorVideoId: msg['videoId'] as String? ?? _loadedVideoId,
       );
     } else if (type == 'stateChange' && msg['state'] is num) {
       _localPlayerState = (msg['state'] as num).toInt();
+      if (_localPlayerState == YtPlayerState.playing && state.autoplayBlocked) {
+        state = state.copyWith(autoplayBlocked: false);
+      }
+    } else if (type == 'autoplayBlocked') {
+      debugPrint(
+        '[MenziDJ][${DeviceSession.id}] autoplayBlocked (gestureGranted=$_audioGestureGranted)',
+      );
+      if (_audioGestureGranted) {
+        // Ya nos autorizaron una vez en este LIVE — no volver a mostrar el aviso, solo
+        // reintentar en silencio (puede ser un hipo puntual de buffering lento, no un bloqueo
+        // real del navegador).
+        _sendCommand('play');
+        _applyLocalAudioState();
+      } else {
+        state = state.copyWith(autoplayBlocked: true);
+      }
     }
+  }
+
+  /// Llamado desde un toque real del usuario sobre "Toca para activar el audio de Menzi DJ" —
+  /// a diferencia de los comandos que manda el propio provider (play/unmute automáticos al
+  /// sincronizar sesión), este SÍ nace de un gesto genuino, que es justo lo que le puede faltar
+  /// al WebView/OEM para dejar sonar el audio. Se recuerda para el resto de la sesión del LIVE
+  /// (ver `_audioGestureGranted`): no tiene sentido volver a pedirlo en cada canción nueva.
+  void enableAudioAfterGesture() {
+    _audioGestureGranted = true;
+    state = state.copyWith(autoplayBlocked: false);
+    _sendCommand('play');
+    _applyLocalAudioState();
   }
 
   /// Solo re-seekea/retoca play-pause cuando de verdad cambió el video o el estado
@@ -427,7 +554,10 @@ class MenziDjNotifier extends Notifier<MenziDjState>
     if (videoChanged) {
       _loadedVideoId = session.currentVideoId;
       state = state.copyWith(clearPlayerError: true);
-      _sendCommand('load', {'videoId': session.currentVideoId});
+      _sendCommand('load', {
+        'videoId': session.currentVideoId,
+        'startSeconds': session.positionSeconds,
+      });
     }
     final statusChanged = _lastAppliedStatus != session.status;
     if (!videoChanged && !statusChanged) return;
@@ -439,6 +569,61 @@ class MenziDjNotifier extends Notifier<MenziDjState>
     } else if (session.status == MusicSessionStatus.paused) {
       _sendCommand('seek', {'seconds': session.positionSeconds});
       _sendCommand('pause');
+    }
+  }
+
+  /// Body real de `/topic/rooms/{roomId}/music` (ver MusicEvent.java en menzoapi): trae siempre
+  /// `type` y `version`, y en la mayoría de los tipos (STARTED/PAUSED/RESUMED/SEEKED/SKIPPED/
+  /// STOPPED/SETTINGS_UPDATED/TRACK_CHANGED/SESSION_CREATED) un `payload` que ya es el snapshot
+  /// completo (mismo shape que GET .../music) — se aplica directo, sin otro round-trip. Antes
+  /// esto ignoraba el body entero (`subscribe(topic, (_) => refresh())`), así que cada evento
+  /// costaba un GET completo y no había forma de distinguir un evento viejo/duplicado de uno
+  /// nuevo (dos controles casi simultáneos podían aplicarse fuera de orden).
+  ///
+  /// TRACK_ADDED/QUEUE_UPDATED/REQUEST_* mandan un QueueItem (o nada) como payload, no un
+  /// snapshot — no alcanza para reconstruir `MusicSession` acá, así que esos siguen
+  /// reconciliándose con un GET real.
+  void _handleMusicEvent(Map<String, dynamic> event) {
+    final type = event['type'];
+    final version = event['version'] as int?;
+    final payload = event['payload'];
+    debugPrint(
+      '[MenziDJ][${DeviceSession.id}] event received: type=$type version=$version',
+    );
+    if (payload is! Map<String, dynamic> ||
+        !payload.containsKey('musicSessionId')) {
+      refresh();
+      return;
+    }
+    final currentVersion = state.session?.version;
+    if (!shouldApplyMusicEventVersion(
+      incomingVersion: version,
+      currentVersion: currentVersion,
+    )) {
+      // Ya aplicado (reenvío/reconexión) o llegó desordenado respecto a algo más nuevo que ya
+      // tenemos — ignorarlo evita pisar el estado actual con uno viejo.
+      debugPrint(
+        '[MenziDJ][${DeviceSession.id}] event ignored: type=$type version=$version currentVersion=$currentVersion',
+      );
+      return;
+    }
+    debugPrint(
+      '[MenziDJ][${DeviceSession.id}] event applied: type=$type version=$version',
+    );
+    _onSnapshotReceived(MusicSession.fromJson(payload));
+  }
+
+  /// Único lugar que decide cómo aplicar un snapshot recién obtenido (por REST o por STOMP):
+  /// si el player todavía no está listo, el video no puede cargarse todavía — se guarda el
+  /// `session` en el estado igual (para que el panel ya muestre algo) y se aplica de verdad al
+  /// player recién en el callback `ready` (ver `_handleBridgeMessage`); si ya está listo, se
+  /// aplica ahora mismo.
+  void _onSnapshotReceived(MusicSession session) {
+    if (state.playerReady) {
+      _applySession(session);
+    } else {
+      _sessionSnapshotAt = DateTime.now();
+      state = state.copyWith(session: session);
     }
   }
 
@@ -491,12 +676,7 @@ class MenziDjNotifier extends Notifier<MenziDjState>
       final session = await ref.read(musicRepositoryProvider).snapshot(roomId);
       if (seq != _refreshRequestSeq) return;
       state = state.copyWith(loading: false, loadError: false);
-      if (state.playerReady) {
-        _applySession(session);
-      } else {
-        _sessionSnapshotAt = DateTime.now();
-        state = state.copyWith(session: session);
-      }
+      _onSnapshotReceived(session);
     } catch (_) {
       if (seq != _refreshRequestSeq) return;
       // Antes cualquier fallo (un hipo de red, el backend tardando en responder, etc.) borraba
@@ -523,8 +703,7 @@ class MenziDjNotifier extends Notifier<MenziDjState>
 
   /// Solo cambia si el recuadro flotante del video se muestra o no — el audio sigue igual, el
   /// WebView nunca se pausa/destruye por esto. Ver el comentario de [MenziDjState.videoHidden].
-  void setVideoHidden(bool value) =>
-      state = state.copyWith(videoHidden: value);
+  void setVideoHidden(bool value) => state = state.copyWith(videoHidden: value);
 
   void toggleLocalMute() {
     final next = !state.localMuted;
