@@ -8,6 +8,42 @@ import '../config/app_config.dart';
 import '../storage/session_storage.dart';
 import 'api_exception.dart';
 
+const _defaultExpirySkew = Duration(seconds: 30);
+
+/// Decodifica el `exp` (segundos epoch UTC) del payload de un JWT y dice si ya venció o está a
+/// menos de [skew] de vencer — sin verificar la firma, que no es el trabajo de este chequeo (el
+/// backend es quien valida de verdad; esto solo decide si vale la pena refrescar proactivamente
+/// antes de un CONNECT de STOMP, que no tiene la chance de reintentar tras un 401 como sí tiene
+/// REST). Función libre de estado (no depende de ApiClient/SessionStorage) para poder cubrir con
+/// un test unitario simple los casos de token vencido/vigente/malformado sin tener que levantar
+/// el cliente HTTP real — ver api_client_test.dart.
+bool isJwtCloseToExpiry(
+  String jwt, {
+  DateTime? now,
+  Duration skew = _defaultExpirySkew,
+}) {
+  try {
+    final parts = jwt.split('.');
+    if (parts.length != 3) return false;
+    final normalized = base64Url.normalize(parts[1]);
+    final payload =
+        jsonDecode(utf8.decode(base64Url.decode(normalized)))
+            as Map<String, dynamic>;
+    final exp = payload['exp'];
+    if (exp is! int) return false;
+    final expiresAt = DateTime.fromMillisecondsSinceEpoch(
+      exp * 1000,
+      isUtc: true,
+    );
+    final reference = (now ?? DateTime.now()).toUtc();
+    return reference.isAfter(expiresAt.subtract(skew));
+  } catch (_) {
+    // Un token que no se puede decodificar no es asunto de este chequeo — que lo rechace el
+    // backend como corresponda; acá no bloqueamos la conexión por las dudas.
+    return false;
+  }
+}
+
 /// Cliente HTTP único de la app — replica el comportamiento ya validado en menzoweb/menzomovil
 /// (RN) contra un backend de Render free-tier que se duerme: reintentos cada 3s hasta un
 /// presupuesto de 75s en errores de red/502/503/504 (un "cold start" se ve como conexión
@@ -222,7 +258,7 @@ class ApiClient {
   Future<String?> ensureFreshAccessToken() async {
     final session = SessionStorage.instance.cached;
     if (session == null) return null;
-    if (!_isCloseToExpiry(session.accessToken)) return session.accessToken;
+    if (!isJwtCloseToExpiry(session.accessToken)) return session.accessToken;
     final refreshed = await _refreshOnce();
     if (refreshed) return SessionStorage.instance.cached?.accessToken;
     // El refresh token también venció/es inválido — mismo tratamiento que el 401 de REST: no
@@ -230,30 +266,6 @@ class ApiClient {
     await SessionStorage.instance.clear();
     _sessionExpiredController.add(null);
     return null;
-  }
-
-  static const _expirySkew = Duration(seconds: 30);
-
-  bool _isCloseToExpiry(String jwt) {
-    try {
-      final parts = jwt.split('.');
-      if (parts.length != 3) return false;
-      final normalized = base64Url.normalize(parts[1]);
-      final payload =
-          jsonDecode(utf8.decode(base64Url.decode(normalized)))
-              as Map<String, dynamic>;
-      final exp = payload['exp'];
-      if (exp is! int) return false;
-      final expiresAt = DateTime.fromMillisecondsSinceEpoch(
-        exp * 1000,
-        isUtc: true,
-      );
-      return DateTime.now().toUtc().isAfter(expiresAt.subtract(_expirySkew));
-    } catch (_) {
-      // Un token que no se puede decodificar no es asunto de este chequeo — que lo rechace el
-      // backend como corresponda; acá no bloqueamos la conexión por las dudas.
-      return false;
-    }
   }
 
   Future<bool> _refreshOnce() {
