@@ -262,11 +262,10 @@ class _BubbleOptInPromptState extends State<_BubbleOptInPrompt> {
   /// Solo en memoria (no persistido) — se resetea al reiniciar la app. Antes se guardaba en
   /// disco que "ya se preguntó" apenas se MOSTRABA el diálogo (sin importar la respuesta), así
   /// que un solo "Ahora no" tocado una vez, alguna vez, dejaba el permiso sin volver a pedirse
-  /// NUNCA MÁS — y como este mismo permiso de overlay es el que necesita el hand-off nativo de
-  /// Menzi DJ (`MenziDjBackgroundPlayer`, no solo la burbuja), eso se sentía como "la música
-  /// sigue pausándose/reiniciándose al salir de la app" sin que hubiera forma de saber por qué
-  /// ni de arreglarlo desde la UI. Ahora se vuelve a preguntar en cada LIVE nuevo (una vez por
-  /// sesión de la app) mientras el permiso siga sin concederse de verdad.
+  /// NUNCA MÁS. Ahora se vuelve a preguntar en cada LIVE nuevo (una vez por sesión de la app)
+  /// mientras el permiso siga sin concederse de verdad — este permiso de overlay es solo para
+  /// la burbuja del LIVE; Menzi DJ ya no depende de él (el reproductor nativo de fondo que sí
+  /// lo necesitaba se retiró, ver MENZI_DJ_ARCHITECTURE.md).
   static bool _declinedThisSession = false;
 
   @override
