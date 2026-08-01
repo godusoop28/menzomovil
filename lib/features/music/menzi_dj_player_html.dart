@@ -44,15 +44,20 @@ String menziDjPlayerHtml(String origin) =>
     // WebKitWebViewControllerCreationParams.mediaTypesRequiringUserAction en el lado Dart)
     // puede aceptar el comando en silencio sin que el audio realmente arranque. Este margen le
     // da tiempo al player de pasar por BUFFERING legítimo antes de considerar que quedó
-    // bloqueado — si a los 2.5s no está ni reproduciendo ni bufferizando, se avisa a Dart en vez
-    // de seguir mostrando "reproduciendo" sobre un player que en los hechos está mudo/parado.
-    function scheduleBlockCheck() {
+    // bloqueado. [expectMuted] es lo que el propio comando dejó pedido (un `mute` local del
+    // usuario nunca debe reportarse como "bloqueado" — mudo a propósito no es un fallo); solo
+    // cuenta como bloqueado si, pese a esperar audio real, el player queda parado, mudo o en
+    // volumen 0.
+    function scheduleBlockCheck(expectMuted) {
       if (blockCheckTimer) clearTimeout(blockCheckTimer);
       blockCheckTimer = setTimeout(function () {
         blockCheckTimer = null;
         if (!player) return;
         var s = player.getPlayerState();
-        if (s !== 1 && s !== 3) {
+        var stateOk = (s === 1 || s === 3);
+        var muteOk = expectMuted || !player.isMuted();
+        var volumeOk = expectMuted || player.getVolume() > 0;
+        if (!stateOk || !muteOk || !volumeOk) {
           post({ type: 'autoplayBlocked' });
         }
       }, 2500);
@@ -122,7 +127,8 @@ String menziDjPlayerHtml(String origin) =>
           break;
         case 'play':
           player.playVideo();
-          scheduleBlockCheck();
+          // `play` solo no cambia el mute — se evalúa contra lo que el player ya tenía.
+          scheduleBlockCheck(player.isMuted());
           break;
         case 'pause':
           cancelBlockCheck();
@@ -132,12 +138,14 @@ String menziDjPlayerHtml(String origin) =>
           player.seekTo(msg.seconds, true);
           break;
         case 'mute':
+          // Silencio LOCAL a propósito (el usuario o el estado inicial) — nunca es "bloqueado".
+          cancelBlockCheck();
           player.mute();
           break;
         case 'unmute':
           player.unMute();
           if (typeof msg.volume === 'number') player.setVolume(msg.volume);
-          scheduleBlockCheck();
+          scheduleBlockCheck(false);
           break;
         case 'volume':
           player.setVolume(msg.volume);

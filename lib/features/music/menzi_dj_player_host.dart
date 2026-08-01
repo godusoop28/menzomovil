@@ -42,19 +42,19 @@ class _MenziDjPlayerHostState extends ConsumerState<MenziDjPlayerHost> {
 
     // El video visible solo aparece si el panel lo pidió expandido Y el usuario no lo ocultó
     // desde ahí — en cualquier otro caso el WebView sigue montado igual (el audio no se
-    // interrumpe), solo se deja de mostrar/mover el recuadro.
+    // interrumpe), solo se deja de mostrar/mover el recuadro. CRÍTICO: nunca a tamaño 1×1 con
+    // Opacity 0 acá — Chromium (WebView de Android) trata una superficie prácticamente sin
+    // área visible como inactiva y puede suspender su reproducción, no solo su render, lo que
+    // explicaba por qué el segundo usuario (que nunca tenía el panel expandido) no escuchaba
+    // Menzi DJ estando DENTRO de la app. Mismas dimensiones reales que el estado expandido,
+    // solo que posicionado fuera del viewport — visible para Chromium, invisible para el ojo.
     if (!music.expanded || music.videoHidden) {
       return Positioned(
-        bottom: 170,
-        left: 16,
-        width: 1,
-        height: 1,
-        child: IgnorePointer(
-          child: Opacity(
-            opacity: 0,
-            child: WebViewWidget(controller: controller),
-          ),
-        ),
+        left: -_expandedWidth - 50,
+        top: -_expandedHeight - 50,
+        width: _expandedWidth,
+        height: _expandedHeight,
+        child: IgnorePointer(child: WebViewWidget(controller: controller)),
       );
     }
 
