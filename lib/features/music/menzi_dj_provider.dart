@@ -462,6 +462,7 @@ class MenziDjNotifier extends Notifier<MenziDjState>
     _backgroundHandoffPosition = null;
     _backgroundHandoffAt = null;
     _audioGestureGranted = false;
+    _recentEventIds.clear();
     // Recién acá se destruye de verdad el reproductor de fondo — dejarlo precalentado durante
     // toda la sesión (ver [_setup]) solo tiene sentido mientras siga habiendo un LIVE/Menzi DJ
     // activo al que volver.
@@ -583,13 +584,32 @@ class MenziDjNotifier extends Notifier<MenziDjState>
   /// TRACK_ADDED/QUEUE_UPDATED/REQUEST_* mandan un QueueItem (o nada) como payload, no un
   /// snapshot — no alcanza para reconstruir `MusicSession` acá, así que esos siguen
   /// reconciliándose con un GET real.
+  /// Últimos `eventId` ya procesados (Fase 3: idempotencia) — acotado, no hace falta recordar
+  /// más que un puñado: un reenvío real (reconexión que reentrega algo que ya se aplicó) llega
+  /// cerca en el tiempo, no minutos después.
+  final List<String> _recentEventIds = [];
+  static const _recentEventIdsLimit = 20;
+
   void _handleMusicEvent(Map<String, dynamic> event) {
     final type = event['type'];
     final version = event['version'] as int?;
+    final eventId = event['eventId'] as String?;
     final payload = event['payload'];
     debugPrint(
-      '[MenziDJ][${DeviceSession.id}] event received: type=$type version=$version',
+      '[MenziDJ][${DeviceSession.id}] event received: type=$type version=$version eventId=$eventId',
     );
+    if (eventId != null) {
+      if (_recentEventIds.contains(eventId)) {
+        debugPrint(
+          '[MenziDJ][${DeviceSession.id}] event ignored: duplicate eventId=$eventId',
+        );
+        return;
+      }
+      _recentEventIds.add(eventId);
+      if (_recentEventIds.length > _recentEventIdsLimit) {
+        _recentEventIds.removeAt(0);
+      }
+    }
     if (payload is! Map<String, dynamic> ||
         !payload.containsKey('musicSessionId')) {
       refresh();
@@ -606,6 +626,17 @@ class MenziDjNotifier extends Notifier<MenziDjState>
         '[MenziDJ][${DeviceSession.id}] event ignored: type=$type version=$version currentVersion=$currentVersion',
       );
       return;
+    }
+    // Salto de versión (p. ej. actual=10, llega 13): algo se perdió en el medio — se aplica
+    // este snapshot igual (es el más nuevo que tenemos, mejor que dejar la música colgada) pero
+    // se dispara una reconciliación real por GET para no quedarse con un estado a medio camino.
+    if (version != null &&
+        currentVersion != null &&
+        version - currentVersion > 1) {
+      debugPrint(
+        '[MenziDJ][${DeviceSession.id}] version gap detected: currentVersion=$currentVersion incomingVersion=$version — reconciling',
+      );
+      refresh();
     }
     debugPrint(
       '[MenziDJ][${DeviceSession.id}] event applied: type=$type version=$version',
