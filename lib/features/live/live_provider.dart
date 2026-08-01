@@ -1,9 +1,11 @@
 import 'dart:async';
 
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import '../../core/diagnostics/device_session.dart';
 import '../../core/native/background_audio_channel.dart';
 import '../../core/network/api_exception.dart';
 import '../../core/network/stomp_service.dart';
@@ -26,6 +28,7 @@ class LiveState {
     this.connecting = false,
     this.myRole,
     this.muted = true,
+    this.forceMuted = false,
     this.microphoneChanging = false,
     this.localAudioPublished = false,
     this.lastMicrophoneError,
@@ -44,6 +47,12 @@ class LiveState {
   final bool connecting;
   final LiveParticipantRole? myRole;
   final bool muted;
+
+  /// true cuando el último cambio a `muted` vino de un FORCE_MUTE de un anfitrión/coanfitrión
+  /// (ver `_applyRemoteMicrophoneChange`), no de un `toggleMute()` propio — mientras esté en
+  /// `true`, `toggleMute()` no puede desmutear localmente (ver el guard ahí). Se limpia con el
+  /// siguiente `_publishMic` (rejoin, o al ser re-aprobado para hablar tras una democión).
+  final bool forceMuted;
   final bool microphoneChanging;
   final bool localAudioPublished;
   final String? lastMicrophoneError;
@@ -72,6 +81,7 @@ class LiveState {
     LiveParticipantRole? myRole,
     bool clearMyRole = false,
     bool? muted,
+    bool? forceMuted,
     bool? microphoneChanging,
     bool? localAudioPublished,
     String? lastMicrophoneError,
@@ -96,6 +106,7 @@ class LiveState {
     connecting: connecting ?? this.connecting,
     myRole: clearMyRole ? null : (myRole ?? this.myRole),
     muted: muted ?? this.muted,
+    forceMuted: forceMuted ?? this.forceMuted,
     microphoneChanging: microphoneChanging ?? this.microphoneChanging,
     localAudioPublished: localAudioPublished ?? this.localAudioPublished,
     lastMicrophoneError: clearLastMicrophoneError
@@ -293,6 +304,35 @@ class LiveNotifier extends Notifier<LiveState> {
               );
             }
           },
+          // El token de Agora expira a la hora (TOKEN_EXPIRE_SECONDS en LiveService.getToken) —
+          // sin renovarlo, cualquier LIVE que dure más que eso desconecta a todos de golpe (audio
+          // y Menzi DJ incluidos) sin ningún aviso previo. `onTokenPrivilegeWillExpire` da margen
+          // para pedir uno nuevo y aplicarlo con `renewToken` ANTES de que el actual venza — sin
+          // salir del canal, sin tocar mute/rol/nada más del estado del LIVE.
+          onTokenPrivilegeWillExpire: (connection, token) async {
+            debugPrint(
+              '[Agora][${DeviceSession.id}] token renewal (willExpire)',
+            );
+            try {
+              final fresh = await ref
+                  .read(liveRepositoryProvider)
+                  .token(roomId);
+              await engine.renewToken(fresh.token);
+            } catch (_) {
+              // Best-effort: si falla, Agora reintentará este mismo callback más cerca del
+              // vencimiento real; no hay nada seguro que hacer acá aparte de reintentar después.
+            }
+          },
+          onRequestToken: (connection) async {
+            // Menos común que willExpire (dispara si el token YA venció del lado del servidor de
+            // Agora antes de que el SDK avisara) — mismo remedio: pedir uno nuevo y aplicarlo.
+            try {
+              final fresh = await ref
+                  .read(liveRepositoryProvider)
+                  .token(roomId);
+              await engine.renewToken(fresh.token);
+            } catch (_) {}
+          },
         ),
       );
       await engine.enableAudioVolumeIndication(
@@ -357,7 +397,7 @@ class LiveNotifier extends Notifier<LiveState> {
       if (state.canModerate) await refreshSpeakingRequests(roomId);
 
       if (canSpeak) {
-        await _requestMicAndPublish();
+        await _requestMicAndPublish(initialMuted: true);
       } else {
         // Audiencia: nunca se pide RECORD_AUDIO ni se declara el tipo `microphone` del
         // foreground service — solo `mediaPlayback`, para que Menzi DJ siga sonando en
@@ -407,7 +447,7 @@ class LiveNotifier extends Notifier<LiveState> {
   /// `granted` se publica el micrófono y se le pide al foreground service el tipo
   /// `microphone`; si se rechaza, el usuario queda como hablante "silenciado sin permiso" en
   /// vez de cerrarse la app.
-  Future<void> _requestMicAndPublish() async {
+  Future<void> _requestMicAndPublish({required bool initialMuted}) async {
     final status = await Permission.microphone.request();
     if (!status.isGranted) {
       state = state.copyWith(
@@ -424,7 +464,7 @@ class LiveNotifier extends Notifier<LiveState> {
       return;
     }
     state = state.copyWith(microphonePermissionDenied: false);
-    await _publishMic();
+    await _publishMic(initialMuted: initialMuted);
     await BackgroundAudioChannel.start(
       mode: BackgroundAudioMode.speak,
       title: 'MENZO · en vivo',
@@ -432,7 +472,12 @@ class LiveNotifier extends Notifier<LiveState> {
     );
   }
 
-  Future<void> _publishMic() async {
+  /// [initialMuted] distingue el join automático (entra publicado pero silenciado — ver
+  /// LiveService.startLive, que ahora crea al HOST con `microphoneEnabled=false` para coincidir)
+  /// del primer toque real del usuario en "activar micrófono" (que sí debe terminar
+  /// desmutuado, sin pedir un segundo toque — ver el guard viejo en `toggleMute` que llamaba
+  /// esto mismo y después hacía `return` sin desmutear nunca).
+  Future<void> _publishMic({required bool initialMuted}) async {
     final engine = _engine;
     if (engine == null) return;
     // Mientras esto está en vuelo, el botón de mutear debe quedar deshabilitado (igual que
@@ -447,12 +492,26 @@ class LiveNotifier extends Notifier<LiveState> {
       await engine.updateChannelMediaOptions(
         const ChannelMediaOptions(publishMicrophoneTrack: true),
       );
-      await engine.muteLocalAudioStream(true);
+      await engine.muteLocalAudioStream(initialMuted);
       state = state.copyWith(
         localAudioPublished: true,
-        muted: true,
+        muted: initialMuted,
+        // Un publish nuevo (join, o volver a hablar tras una democión) es un estado conocido y
+        // deliberado — ya no aplica un FORCE_MUTE anterior de una etapa previa del LIVE.
+        forceMuted: false,
         clearLastMicrophoneError: true,
       );
+      // Confirma al backend el estado REAL que Agora acaba de aplicar — sin esto, el resto de
+      // los participantes (que arman la insignia de micrófono desde
+      // LiveParticipantResponse.microphoneEnabled, no desde Agora) podían ver a este usuario
+      // como "con micrófono" mientras seguía mudo de verdad, o viceversa.
+      final roomId = state.activeRoomId;
+      if (roomId != null) {
+        ref
+            .read(liveRepositoryProvider)
+            .setMicrophone(roomId, !initialMuted)
+            .catchError((_) {});
+      }
     } catch (e) {
       state = state.copyWith(
         localAudioPublished: false,
@@ -472,7 +531,7 @@ class LiveNotifier extends Notifier<LiveState> {
       await engine.renewToken(token.token);
       await engine.setClientRole(role: ClientRoleType.clientRoleBroadcaster);
       state = state.copyWith(myRole: LiveParticipantRole.speaker);
-      await _requestMicAndPublish();
+      await _requestMicAndPublish(initialMuted: true);
     } catch (e) {
       state = state.copyWith(
         lastMicrophoneError: 'No pudimos activar tu lugar como hablante.',
@@ -520,6 +579,15 @@ class LiveNotifier extends Notifier<LiveState> {
     final roomId = state.activeRoomId;
     final engine = _engine;
     if (roomId == null || engine == null) return;
+    if (state.forceMuted && state.muted) {
+      // Un anfitrión/coanfitrión forzó el mute — no es un mute propio que el usuario pueda
+      // simplemente revertir tocando el botón de nuevo (ver `_applyRemoteMicrophoneChange`).
+      state = state.copyWith(
+        lastMicrophoneError:
+            'Un anfitrión silenció tu micrófono — no podés reactivarlo vos.',
+      );
+      return;
+    }
 
     state = state.copyWith(
       microphoneChanging: true,
@@ -527,7 +595,12 @@ class LiveNotifier extends Notifier<LiveState> {
     );
     try {
       if (!state.localAudioPublished) {
-        await _publishMic();
+        // El usuario está tocando "activar micrófono" ahora mismo — a diferencia del join
+        // automático (que entra silenciado a propósito), esta es una intención explícita de
+        // hablar: debe terminar desmutuado sin pedir un segundo toque. Antes esto llamaba
+        // `_publishMic()` directo (sin re-pedir el permiso de RECORD_AUDIO si se había negado
+        // antes) y siempre dejaba `muted: true`, así que el primer toque nunca activaba nada.
+        await _requestMicAndPublish(initialMuted: false);
         return;
       }
       final next = !state.muted;
@@ -662,7 +735,25 @@ class LiveNotifier extends Notifier<LiveState> {
               (payload['payload'] as Map<String, dynamic>?)?['user']
                   as Map<String, dynamic>?;
           final isMe = myPayloadUser != null && myPayloadUser['id'] == _myUid;
-          if (isMe && type == 'CHAT_LIVE_SPEAKING_APPROVED') {
+          if (isMe && type == 'CHAT_LIVE_PARTICIPANT_LEFT') {
+            // Mismo tipo de evento que un `leave()` propio, pero uno voluntario ya destruyó
+            // `_liveChannel` antes de que este mensaje pudiera llegarnos — si de verdad lo
+            // recibimos siendo nosotros el `user` del payload, es porque un anfitrión/coanfitrión
+            // nos expulsó (`removeParticipant`), no porque nos hayamos ido solos. Sin esto, el
+            // expulsado seguía publicando/escuchando Agora y con el foreground service activo
+            // hasta que notara la app trabada y saliera a mano.
+            state = state.copyWith(
+              lastMicrophoneError: 'Un anfitrión te expulsó de este LIVE.',
+            );
+            leave();
+            return;
+          } else if (isMe && type == 'CHAT_LIVE_MICROPHONE_CHANGED') {
+            final micEnabled =
+                (payload['payload']
+                        as Map<String, dynamic>?)?['microphoneEnabled']
+                    as bool?;
+            if (micEnabled != null) _applyRemoteMicrophoneChange(micEnabled);
+          } else if (isMe && type == 'CHAT_LIVE_SPEAKING_APPROVED') {
             becomeSpeaker(roomId);
           } else if (isMe &&
               (type == 'CHAT_LIVE_PARTICIPANT_DEMOTED' ||
@@ -695,6 +786,35 @@ class LiveNotifier extends Notifier<LiveState> {
           }
         });
       },
+    );
+  }
+
+  /// Reacciona a un CHAT_LIVE_MICROPHONE_CHANGED dirigido a este mismo usuario. El backend solo
+  /// manda un booleano (`microphoneEnabled`), sin decir quién lo cambió — pero si el nuevo valor
+  /// CONTRADICE lo que ya creíamos localmente (`state.muted`), no pudo haber salido de nuestro
+  /// propio `toggleMute()`/`_publishMic()` (esos ya actualizan `state.muted` de manera optimista
+  /// antes de que este eco vuelva), así que tiene que ser un FORCE_MUTE de un anfitrión/
+  /// coanfitrión (`LiveService.forceMute`, la única otra vía que toca este campo). Si coincide
+  /// con lo que ya aplicamos, es solo el eco de nuestro propio cambio — no hay nada que hacer.
+  Future<void> _applyRemoteMicrophoneChange(bool microphoneEnabled) async {
+    final shouldBeMuted = !microphoneEnabled;
+    if (shouldBeMuted == state.muted) return;
+    debugPrint(
+      '[Live][${DeviceSession.id}] remote microphone change: microphoneEnabled=$microphoneEnabled (force)',
+    );
+    final engine = _engine;
+    if (engine != null) {
+      try {
+        await engine.muteLocalAudioStream(shouldBeMuted);
+      } catch (_) {}
+    }
+    state = state.copyWith(
+      muted: shouldBeMuted,
+      forceMuted: shouldBeMuted,
+      lastMicrophoneError: shouldBeMuted
+          ? 'Un anfitrión o coanfitrión silenció tu micrófono.'
+          : null,
+      clearLastMicrophoneError: !shouldBeMuted,
     );
   }
 
