@@ -19,6 +19,7 @@ class LocalPrefs {
   static const _keyVoiceBubbleHidden = 'menzo.voiceBubbleHidden';
   static const _keyVoiceBubbleFractionX = 'menzo.voiceBubbleFractionX';
   static const _keyVoiceBubbleFractionY = 'menzo.voiceBubbleFractionY';
+  static const _keyDjMiniSizePreset = 'menzo.djMiniSizePreset';
 
   Future<String?> get cachedProfileJson async =>
       (await _ensure()).getString(_keyCachedProfileJson);
@@ -53,6 +54,14 @@ class LocalPrefs {
     await prefs.setDouble(_keyVoiceBubbleFractionX, value.dx);
     await prefs.setDouble(_keyVoiceBubbleFractionY, value.dy);
   }
+
+  /// 'compact' | 'expanded' — preferencia de tamaño del mini-reproductor de DJ Menzi (ver
+  /// menzi_dj_player_host.dart). `null` cuando el usuario nunca la tocó (el widget cae a su
+  /// propio default).
+  Future<String?> get djMiniSizePreset async =>
+      (await _ensure()).getString(_keyDjMiniSizePreset);
+  Future<void> setDjMiniSizePreset(String value) async =>
+      (await _ensure()).setString(_keyDjMiniSizePreset, value);
 
   Future<void> clear() async => (await _ensure()).clear();
 }

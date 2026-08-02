@@ -5,7 +5,7 @@ import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
 import 'features/live/live_bubble_controller.dart';
 import 'features/live/persistent_voice_bubble.dart';
-import 'features/music/menzi_dj_mini_bar.dart';
+import 'features/music/menzi_dj_autoplay_banner.dart';
 import 'features/music/menzi_dj_player_host.dart';
 import 'features/notifications/notification_stream_controller.dart';
 
@@ -22,7 +22,7 @@ class _RootOverlays extends StatelessWidget {
       children: [
         child,
         const MenziDjPlayerHost(),
-        const MenziDjMiniBar(),
+        const MenziDjAutoplayBanner(),
         const PersistentVoiceBubble(),
       ],
     );

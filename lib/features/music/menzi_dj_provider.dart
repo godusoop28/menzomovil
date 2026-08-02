@@ -230,7 +230,7 @@ class MenziDjState {
 
 /// DJ Menzi — equivalente Flutter de menzoweb/lib/music/MenziDjContext.tsx y su versión
 /// React Native (WebView). El WebView del reproductor oficial de YouTube vive montado una sola
-/// vez (ver [MenziDjMiniBar]/[MenziDjPanel]) y sobrevive a cualquier navegación. Atado al ciclo
+/// vez (ver [MenziDjPlayerHost]/[MenziDjPanel]) y sobrevive a cualquier navegación. Atado al ciclo
 /// de vida de [liveProvider].activeRoomId — no tiene sentido escuchar música de un LIVE al que
 /// no estás conectado.
 class MenziDjNotifier extends Notifier<MenziDjState>
