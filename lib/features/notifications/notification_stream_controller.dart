@@ -7,6 +7,7 @@ import '../../core/notifications/local_notifications.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/router/app_router.dart';
 import '../../data/models/community_models.dart';
+import '../chat/chat_list_screen.dart';
 import 'notifications_screen.dart';
 
 /// Empuje en tiempo real de notificaciones (mensajes directos, seguidores, comentarios/likes,
@@ -56,6 +57,14 @@ class NotificationStreamController {
     // manual — sin invalidarlo acá, un mensaje/seguidor nuevo no aparecería ahí hasta que el
     // usuario refresque la pantalla a mano.
     ref.invalidate(notificationsListProvider);
+    if (notification.category == NotificationCategory.mensajes) {
+      // La bandeja de chats (myRoomsProvider) también vive de un fetch manual — sin esto, un
+      // mensaje nuevo en OTRO chat no reordenaba la bandeja (el chat no subía al primer lugar)
+      // hasta que el usuario la reabriera a mano. El backend ya devuelve la lista ordenada por
+      // actividad más reciente (ver ChatService.INBOX_ORDER), así que un refetch simple alcanza
+      // — no hace falta reordenar la lista localmente a mano.
+      ref.invalidate(myRoomsProvider);
+    }
     LocalNotifications.show(
       id: notification.id.hashCode & 0x7fffffff,
       title: notification.title,
