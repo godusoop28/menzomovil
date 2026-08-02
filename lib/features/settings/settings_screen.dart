@@ -109,6 +109,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
             onTap: () => context.push('/debug/youtube-player'),
           ),
+          const SizedBox(height: 8),
+          ListTile(
+            tileColor: AppColors.surfaceSecondary,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+            title: const Text('Logs de Menzi DJ'),
+            subtitle: const Text(
+              'Registro interno de LIVE/Menzi DJ — sin depuración USB, exportable como TXT',
+            ),
+            onTap: () => context.push('/debug/menzi-dj-logs'),
+          ),
           const SizedBox(height: 20),
           async.when(
             data: (settings) {

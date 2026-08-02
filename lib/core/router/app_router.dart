@@ -20,6 +20,7 @@ import '../../features/profile/edit_profile_screen.dart';
 import '../../features/profile/member_profile_screen.dart';
 import '../../features/profile/own_profile_screen.dart';
 import '../../features/search/search_screen.dart';
+import '../../features/diagnostics/menzi_dj_logs_screen.dart';
 import '../../features/music/youtube_mobile_diagnostic_screen.dart';
 import '../../features/settings/settings_screen.dart';
 import '../../features/shared/app_shell.dart';
@@ -95,6 +96,16 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/debug/youtube-player',
         builder: (context, state) => const YouTubeMobileDiagnosticScreen(),
+      ),
+      GoRoute(
+        path: '/debug/menzi-dj-logs',
+        builder: (context, state) {
+          final args = state.extra as MenziDjLogsScreenArgs?;
+          return MenziDjLogsScreen(
+            initialCategories: args?.categories,
+            onlyErrorsInitially: args?.onlyErrors ?? false,
+          );
+        },
       ),
       GoRoute(
         path: '/events',

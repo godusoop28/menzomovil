@@ -8,6 +8,7 @@ import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 
 import '../../core/config/app_config.dart';
+import '../../core/diagnostics/app_diagnostic_logger.dart';
 import '../../core/diagnostics/device_session.dart';
 import '../../core/network/api_exception.dart';
 import '../../core/network/stomp_service.dart';
@@ -219,7 +220,11 @@ class MenziDjNotifier extends Notifier<MenziDjState>
       params = const PlatformWebViewControllerCreationParams();
     }
     final id = instanceId;
-    debugPrint('[YT-INSTANCE][${DeviceSession.id}] controller created id=$id');
+    _log(DiagnosticCategory.ytInstance, MenziLogLevel.info, 'controller created', data: {'instanceId': id});
+    // El getter solo lo llama MenziDjPlayerHost.build() al armar su WebViewWidget — por
+    // construcción, si esto corre es porque un WebViewWidget está por montarse con este mismo
+    // controller (ver menzi_dj_player_host.dart).
+    _log(DiagnosticCategory.ytInstance, MenziLogLevel.info, 'WebView mounted', data: {'instanceId': id});
     final controller = WebViewController.fromPlatformCreationParams(params)
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(const Color(0xFF000000))
@@ -230,7 +235,10 @@ class MenziDjNotifier extends Notifier<MenziDjState>
       ..setNavigationDelegate(
         NavigationDelegate(
           onPageFinished: (url) {
-            debugPrint('[YT-INSTANCE][${DeviceSession.id}] page loaded id=$id url=$url');
+            _log(DiagnosticCategory.ytInstance, MenziLogLevel.info, 'page loaded', data: {
+              'instanceId': id,
+              'url': url,
+            });
           },
         ),
       );
@@ -250,8 +258,16 @@ class MenziDjNotifier extends Notifier<MenziDjState>
     ).replace(queryParameters: {'instanceId': id});
     debugPrint('[MenziDJPlayer][${DeviceSession.id}] loading $uri');
     controller.loadRequest(uri);
-    debugPrint('[YT-INSTANCE][${DeviceSession.id}] WebView mounted id=$id');
     return _controller = controller;
+  }
+
+  void _log(
+    DiagnosticCategory category,
+    MenziLogLevel level,
+    String message, {
+    Map<String, dynamic>? data,
+  }) {
+    AppDiagnosticLogger.instance.log(category, level, message, data: data);
   }
 
   @override
@@ -294,6 +310,7 @@ class MenziDjNotifier extends Notifier<MenziDjState>
     // del timer de drift en `_setup`).
     _pendingTimeRequest = null;
     debugPrint('[MenziDJ][${DeviceSession.id}] lifecycle paused — local playback suspended');
+    _log(DiagnosticCategory.lifecycle, MenziLogLevel.info, 'app backgrounded — local playback paused');
     _sendCommand('pause');
   }
 
@@ -306,10 +323,12 @@ class MenziDjNotifier extends Notifier<MenziDjState>
     if (!_isBackgrounded) return;
     _isBackgrounded = false;
     debugPrint('[MenziDJ][${DeviceSession.id}] lifecycle resumed — reconciling with server snapshot');
+    _log(DiagnosticCategory.lifecycle, MenziLogLevel.info, 'app foregrounded — reconciling with server snapshot');
     refresh();
   }
 
   void _setup(String roomId) {
+    _log(DiagnosticCategory.live, MenziLogLevel.info, 'Menzi DJ attached to room', data: {'roomId': roomId});
     final channel = StompChannel();
     _channel = channel;
     // Orden crítico: la suscripción se registra ANTES de conectar. `StompChannel.connect` manda
@@ -388,9 +407,11 @@ class MenziDjNotifier extends Notifier<MenziDjState>
   }
 
   void _sendCommand(String cmd, [Map<String, dynamic>? args]) {
-    debugPrint(
-      '[YT-INSTANCE][${DeviceSession.id}] command sent id=$instanceId cmd=$cmd',
-    );
+    _log(DiagnosticCategory.ytCommand, MenziLogLevel.info, 'command sent', data: {
+      'instanceId': instanceId,
+      'cmd': cmd,
+      ...?args,
+    });
     _controller?.runJavaScript(
       'window.handleMenziCommand(${jsonEncode(jsonEncode({'cmd': cmd, ...?args}))})',
     );
@@ -425,6 +446,11 @@ class MenziDjNotifier extends Notifier<MenziDjState>
         '[YT-INSTANCE][${DeviceSession.id}] message from foreign instance ignored '
         'expected=$instanceId got=$messageInstanceId type=${msg['type']}',
       );
+      _log(DiagnosticCategory.ytInstance, MenziLogLevel.warning, 'message from foreign instance ignored', data: {
+        'expected': instanceId,
+        'got': messageInstanceId,
+        'type': msg['type'],
+      });
       return;
     }
     final type = msg['type'] as String?;
@@ -434,6 +460,10 @@ class MenziDjNotifier extends Notifier<MenziDjState>
       debugPrint(
         '[MenziDJ][${DeviceSession.id}] player ready id=$instanceId — activePlayerCount=1',
       );
+      _log(DiagnosticCategory.ytInstance, MenziLogLevel.info, 'iframe ready', data: {
+        'instanceId': instanceId,
+        'activePlayerCount': 1,
+      });
       state = state.copyWith(playerReady: true);
       _syncPlayerToSession(state.session);
     } else if (type == 'time' && msg['seconds'] is num) {
@@ -445,6 +475,19 @@ class MenziDjNotifier extends Notifier<MenziDjState>
         'requestedVideoId=${msg['requestedVideoId'] ?? _loadedVideoId} actualVideoId=${msg['actualVideoId']} '
         'documentOrigin=${msg['documentOrigin']} playerState=${msg['playerState']} muted=${msg['muted']} volume=${msg['volume']}',
       );
+      _log(DiagnosticCategory.ytError, MenziLogLevel.error, 'onError', data: {
+        'instanceId': instanceId,
+        'errorCode': msg['errorCode'],
+        'requestedVideoId': msg['requestedVideoId'] ?? _loadedVideoId,
+        'actualVideoId': msg['actualVideoId'],
+        'documentOrigin': msg['documentOrigin'],
+        'documentReferrer': msg['documentReferrer'],
+        'userAgent': msg['userAgent'],
+        'playerState': msg['playerState'],
+        'muted': msg['muted'],
+        'volume': msg['volume'],
+        'currentTime': msg['currentTime'],
+      });
       state = state.copyWith(
         playerErrorCode: (msg['errorCode'] as num).toInt(),
         playerErrorVideoId: msg['requestedVideoId'] as String? ?? _loadedVideoId,
@@ -454,7 +497,18 @@ class MenziDjNotifier extends Notifier<MenziDjState>
         '[YT-INSTANCE][${DeviceSession.id}] duplicatePlayerPrevented id=$instanceId — '
         'onYouTubeIframeAPIReady se disparó dos veces en el mismo documento',
       );
+      _log(DiagnosticCategory.ytInstance, MenziLogLevel.error, 'duplicatePlayerPrevented', data: {
+        'instanceId': instanceId,
+      });
     } else if (type == 'stateChange' && msg['state'] is num) {
+      _log(DiagnosticCategory.ytState, MenziLogLevel.info, 'stateChange', data: {
+        'instanceId': instanceId,
+        'state': msg['state'],
+        'requestedVideoId': msg['requestedVideoId'],
+        'currentTime': msg['currentTime'],
+        'muted': msg['muted'],
+        'volume': msg['volume'],
+      });
       debugPrint(
         '[YT-INSTANCE][${DeviceSession.id}] stateChange id=$instanceId state=${msg['state']}',
       );
@@ -466,6 +520,13 @@ class MenziDjNotifier extends Notifier<MenziDjState>
       debugPrint(
         '[MenziDJ][${DeviceSession.id}] autoplayBlocked (gestureGranted=$_audioGestureGranted)',
       );
+      _log(DiagnosticCategory.autoplay, MenziLogLevel.warning, 'blocked', data: {
+        'instanceId': instanceId,
+        'gestureGranted': _audioGestureGranted,
+        'playerState': msg['playerState'],
+        'muted': msg['muted'],
+        'volume': msg['volume'],
+      });
       if (_audioGestureGranted) {
         // Ya nos autorizaron una vez en este LIVE — no volver a mostrar el aviso, solo
         // reintentar en silencio (puede ser un hipo puntual de buffering lento, no un bloqueo
@@ -473,6 +534,9 @@ class MenziDjNotifier extends Notifier<MenziDjState>
         _sendCommand('play');
         _applyLocalAudioState();
       } else {
+        _log(DiagnosticCategory.autoplay, MenziLogLevel.warning, 'audio gesture requested', data: {
+          'instanceId': instanceId,
+        });
         state = state.copyWith(autoplayBlocked: true);
       }
     }
@@ -485,6 +549,9 @@ class MenziDjNotifier extends Notifier<MenziDjState>
   /// (ver `_audioGestureGranted`): no tiene sentido volver a pedirlo en cada canción nueva.
   void enableAudioAfterGesture() {
     _audioGestureGranted = true;
+    _log(DiagnosticCategory.autoplay, MenziLogLevel.info, 'audio gesture granted', data: {
+      'instanceId': instanceId,
+    });
     state = state.copyWith(autoplayBlocked: false);
     _sendCommand('play');
     _applyLocalAudioState();
@@ -554,6 +621,10 @@ class MenziDjNotifier extends Notifier<MenziDjState>
         debugPrint(
           '[MenziDJ][${DeviceSession.id}] event ignored: duplicate eventId=$eventId',
         );
+        _log(DiagnosticCategory.musicSession, MenziLogLevel.warning, 'event ignored: duplicate eventId', data: {
+          'eventId': eventId,
+          'type': type,
+        });
         return;
       }
       _recentEventIds.add(eventId);
@@ -592,6 +663,14 @@ class MenziDjNotifier extends Notifier<MenziDjState>
     debugPrint(
       '[MenziDJ][${DeviceSession.id}] event applied: type=$type version=$version',
     );
+    _log(DiagnosticCategory.musicSession, MenziLogLevel.info, 'event applied', data: {
+      'type': type,
+      'version': version,
+      'eventId': eventId,
+      'videoId': payload['currentVideoId'],
+      'status': payload['status'],
+      'positionSeconds': payload['positionSeconds'],
+    });
     _onSnapshotReceived(MusicSession.fromJson(payload));
   }
 
@@ -640,6 +719,12 @@ class MenziDjNotifier extends Notifier<MenziDjState>
     try {
       final session = await ref.read(musicRepositoryProvider).snapshot(roomId);
       if (seq != _refreshRequestSeq) return;
+      _log(DiagnosticCategory.musicSession, MenziLogLevel.info, 'snapshot received', data: {
+        'videoId': session.currentVideoId,
+        'status': session.status.name,
+        'positionSeconds': session.positionSeconds,
+        'version': session.version,
+      });
       state = state.copyWith(loading: false, loadError: false);
       _onSnapshotReceived(session);
     } catch (_) {

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:stomp_dart_client/stomp_dart_client.dart';
 
 import '../config/app_config.dart';
+import '../diagnostics/app_diagnostic_logger.dart';
 import '../diagnostics/device_session.dart';
 import 'api_client.dart';
 
@@ -88,6 +89,12 @@ class StompChannel {
           debugPrint(
             '[STOMP][${DeviceSession.id}] ${wasReconnect ? "reconnected" : "connected"} url=${AppConfig.wsUrl}',
           );
+          AppDiagnosticLogger.instance.log(
+            DiagnosticCategory.stomp,
+            MenziLogLevel.info,
+            wasReconnect ? 'reconnected' : 'connected',
+            data: {'topics': _handlers.keys.toList()},
+          );
           // Re-suscribe todo lo que ya estaba pedido antes de reconectar.
           for (final topic in _handlers.keys) {
             _subscribeNow(topic);
@@ -111,11 +118,22 @@ class StompChannel {
           debugPrint(
             '[STOMP][${DeviceSession.id}] websocket done — reconnecting',
           );
+          AppDiagnosticLogger.instance.log(
+            DiagnosticCategory.stomp,
+            MenziLogLevel.warning,
+            'websocket done — reconnecting',
+          );
           _scheduleManualReconnect();
         },
         onWebSocketError: (dynamic error) {
           _connected = false;
           debugPrint('[STOMP][${DeviceSession.id}] error de WebSocket: $error');
+          AppDiagnosticLogger.instance.log(
+            DiagnosticCategory.stomp,
+            MenziLogLevel.error,
+            'websocket error',
+            data: {'error': error.toString()},
+          );
           _scheduleManualReconnect();
         },
         onStompError: (frame) {

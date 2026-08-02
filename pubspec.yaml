@@ -52,6 +52,10 @@ dependencies:
   agora_rtc_engine: ^6.5.4
   url_launcher: ^6.3.2
   flutter_local_notifications: ^19.4.2
+  share_plus: ^11.0.0
+  path_provider: ^2.1.5
+  device_info_plus: ^11.3.0
+  package_info_plus: ^8.3.0
 
 dev_dependencies:
   flutter_test:

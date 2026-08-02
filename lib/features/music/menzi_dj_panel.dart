@@ -1,11 +1,14 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/diagnostics/app_diagnostic_logger.dart';
 import '../../core/network/api_exception.dart';
 import '../../data/models/chat_models.dart';
 import '../../data/models/music_models.dart';
+import '../diagnostics/menzi_dj_logs_screen.dart';
 import '../shared/menzi_illustration_state.dart';
 import '../shared/menzo_sheet.dart';
 import '../shared/menzo_toast.dart';
@@ -43,8 +46,46 @@ class _MenziDjPanelBody extends ConsumerStatefulWidget {
   ConsumerState<_MenziDjPanelBody> createState() => _MenziDjPanelBodyState();
 }
 
+/// Categorías relevantes al player — las que arma "Ver diagnóstico" al abrir
+/// [MenziDjLogsScreen] (Fase 4 del pedido de diagnóstico sin ADB).
+const _playerDiagnosticCategories = {
+  DiagnosticCategory.musicSession,
+  DiagnosticCategory.ytInstance,
+  DiagnosticCategory.ytCommand,
+  DiagnosticCategory.ytState,
+  DiagnosticCategory.ytError,
+  DiagnosticCategory.autoplay,
+};
+
+enum _PlayerDiagnosticStatus { playing, loading, error, notReady }
+
+_PlayerDiagnosticStatus _playerDiagnosticStatusOf(MenziDjState music) {
+  if (music.hasPlayerError) return _PlayerDiagnosticStatus.error;
+  if (!music.playerReady) return _PlayerDiagnosticStatus.notReady;
+  if (music.autoplayBlocked || music.loading) return _PlayerDiagnosticStatus.loading;
+  if (music.session?.status == MusicSessionStatus.playing) {
+    return _PlayerDiagnosticStatus.playing;
+  }
+  return _PlayerDiagnosticStatus.notReady;
+}
+
+Color _playerDiagnosticStatusColor(_PlayerDiagnosticStatus status) => switch (status) {
+  _PlayerDiagnosticStatus.playing => Colors.greenAccent,
+  _PlayerDiagnosticStatus.loading => Colors.amber,
+  _PlayerDiagnosticStatus.error => AppColors.coral,
+  _PlayerDiagnosticStatus.notReady => Colors.grey,
+};
+
+String _playerDiagnosticStatusLabel(_PlayerDiagnosticStatus status) => switch (status) {
+  _PlayerDiagnosticStatus.playing => 'reproduciendo y audible',
+  _PlayerDiagnosticStatus.loading => 'cargando/autoplay',
+  _PlayerDiagnosticStatus.error => 'error',
+  _PlayerDiagnosticStatus.notReady => 'player no listo',
+};
+
 class _MenziDjPanelBodyState extends ConsumerState<_MenziDjPanelBody> {
   _Tab _tab = _Tab.search;
+  bool _diagnosticOverlayOpen = false;
 
   @override
   void initState() {
@@ -67,11 +108,53 @@ class _MenziDjPanelBodyState extends ConsumerState<_MenziDjPanelBody> {
   Widget build(BuildContext context) {
     final music = ref.watch(menziDjProvider);
     final session = music.session;
+    final diagnosticStatus = _playerDiagnosticStatusOf(music);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
+        // Fase de diagnóstico sin ADB/logcat — mientras exista, este indicador + acceso rápido
+        // conviven acá. `_diagnosticOverlayOpen` inserta un bloque MÁS dentro de este mismo
+        // Column (nunca un Stack/Positioned encima de los controles reales), así por
+        // construcción nunca puede tapar nada — solo empuja el resto del panel hacia abajo.
+        Row(
+          children: [
+            Tooltip(
+              message: _playerDiagnosticStatusLabel(diagnosticStatus),
+              child: Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: _playerDiagnosticStatusColor(diagnosticStatus),
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                _playerDiagnosticStatusLabel(diagnosticStatus),
+                style: AppTextStyles.caption(),
+              ),
+            ),
+            IconButton(
+              tooltip: _diagnosticOverlayOpen ? 'Ocultar últimas líneas' : 'Ver últimas líneas',
+              iconSize: 18,
+              onPressed: () => setState(() => _diagnosticOverlayOpen = !_diagnosticOverlayOpen),
+              icon: Icon(_diagnosticOverlayOpen ? Icons.expand_less : Icons.expand_more),
+            ),
+            TextButton(
+              onPressed: () => context.push(
+                '/debug/menzi-dj-logs',
+                extra: const MenziDjLogsScreenArgs(categories: _playerDiagnosticCategories),
+              ),
+              child: const Text('Ver diagnóstico'),
+            ),
+          ],
+        ),
+        if (_diagnosticOverlayOpen) _CompactDiagnosticOverlay(onClose: () => setState(() => _diagnosticOverlayOpen = false)),
+        const SizedBox(height: 4),
         if (session?.currentVideoId != null)
           Container(
             padding: const EdgeInsets.all(10),
@@ -791,6 +874,72 @@ class _HistoryTab extends StatelessWidget {
           ),
         );
       }).toList(),
+    );
+  }
+}
+
+/// Panel compacto opcional (Fase 8 del pedido de diagnóstico sin ADB) — últimas 8 líneas
+/// relevantes al player, siempre dentro del flujo normal del Column (nunca un overlay flotante
+/// sobre controles), cerrable con el botón X. Se re-renderiza solo mientras está abierto (ver
+/// `revision` de AppDiagnosticLogger), así que no tiene costo si el usuario no lo usa.
+class _CompactDiagnosticOverlay extends StatelessWidget {
+  const _CompactDiagnosticOverlay({required this.onClose});
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<int>(
+      valueListenable: AppDiagnosticLogger.instance.revision,
+      builder: (context, revision, child) {
+        final lines = AppDiagnosticLogger.instance
+            .filtered(categories: _playerDiagnosticCategories)
+            .reversed
+            .take(8)
+            .toList()
+            .reversed
+            .toList();
+        return Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.85),
+            borderRadius: BorderRadius.circular(AppRadius.md),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    'Últimas líneas (diagnóstico)',
+                    style: AppTextStyles.caption(color: Colors.white70),
+                  ),
+                  const Spacer(),
+                  GestureDetector(
+                    onTap: onClose,
+                    child: const Icon(Icons.close, size: 14, color: Colors.white70),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              if (lines.isEmpty)
+                Text('Sin registros todavía', style: AppTextStyles.caption(color: Colors.white54))
+              else
+                for (final line in lines)
+                  Text(
+                    line.toLine(),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontFamily: 'monospace',
+                      fontSize: 9,
+                      color: Colors.white70,
+                    ),
+                  ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

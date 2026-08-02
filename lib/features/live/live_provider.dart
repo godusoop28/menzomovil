@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import '../../core/diagnostics/app_diagnostic_logger.dart';
 import '../../core/diagnostics/device_session.dart';
 import '../../core/native/background_audio_channel.dart';
 import '../../core/network/api_exception.dart';
@@ -230,6 +231,12 @@ class LiveNotifier extends Notifier<LiveState> {
 
   Future<void> join(String roomId) async {
     if (state.connecting || state.activeRoomId == roomId) return;
+    AppDiagnosticLogger.instance.log(
+      DiagnosticCategory.live,
+      MenziLogLevel.info,
+      'joining room',
+      data: {'roomId': roomId},
+    );
     state = state.copyWith(connecting: true, clearLastMicrophoneError: true);
     try {
       final liveRepo = ref.read(liveRepositoryProvider);
@@ -397,6 +404,12 @@ class LiveNotifier extends Notifier<LiveState> {
         connected: true,
         connecting: false,
         myRole: session.myRole,
+      );
+      AppDiagnosticLogger.instance.log(
+        DiagnosticCategory.live,
+        MenziLogLevel.info,
+        'connected',
+        data: {'roomId': roomId, 'role': session.myRole?.name},
       );
       // Agora documenta `setEnableSpeakerphone` como la ruta de audio "del canal actual" —a
       // diferencia de `setDefaultAudioRouteToSpeakerphone` (seguro de llamar antes de unirse),

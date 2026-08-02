@@ -27,4 +27,13 @@ class AppConfig {
   /// URL completa de la página estática del reproductor — ver
   /// menzoweb/public/menzi-player.html.
   static String get menziDjPlayerUrl => '$menziDjOrigin/menzi-player.html';
+
+  /// Commit corto de este build — se pasa al compilar con
+  /// `--dart-define=GIT_COMMIT=$(git rev-parse --short HEAD)` (ver device_info_snapshot.dart).
+  /// Sin ese define queda "unknown" en vez de inventar un valor — el log [BUILD]/el TXT
+  /// exportado nunca deben sugerir que se confirmó un commit que en realidad no se pasó.
+  static const String gitCommit = String.fromEnvironment(
+    'GIT_COMMIT',
+    defaultValue: 'unknown',
+  );
 }
