@@ -1,22 +1,27 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:image_picker/image_picker.dart';
 
 import '../../core/providers/repository_providers.dart';
-import '../../core/theme/app_colors.dart';
-import '../../core/theme/app_radius.dart';
 import '../../core/theme/app_text_styles.dart';
-import '../../core/utils/image_prep.dart';
+import '../../data/models/post_models.dart';
 import '../home/home_screen.dart';
 import '../shared/gradient_button.dart';
 import '../shared/menzo_toast.dart';
 import '../shared/segmented_tabs.dart';
+import 'block_editor.dart';
 
 enum _ComposeMode { text, image, poll }
 
-/// 1:1 con menzoweb/components/CreatePostComposer.tsx — texto / imagen / encuesta.
+bool _hasRealContent(List<PostBlock> blocks) => blocks.any(
+  (b) =>
+      ((b.type == PostBlockType.paragraph || b.type == PostBlockType.heading) &&
+          (b.text?.trim().isNotEmpty ?? false)) ||
+      b.type == PostBlockType.image ||
+      b.type == PostBlockType.gif,
+);
+
+/// 1:1 con menzoweb/components/CreatePostComposer.tsx — texto / imagen / encuesta. Texto e
+/// imagen comparten el mismo editor de bloques (ver BlockEditor) desde acá, igual que en web.
 class CreatePostScreen extends ConsumerStatefulWidget {
   const CreatePostScreen({super.key});
 
@@ -26,39 +31,32 @@ class CreatePostScreen extends ConsumerStatefulWidget {
 
 class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   _ComposeMode _mode = _ComposeMode.text;
-  final _bodyController = TextEditingController();
   final _titleController = TextEditingController();
+  final _pollQuestionController = TextEditingController();
   final List<TextEditingController> _pollOptions = [
     TextEditingController(),
     TextEditingController(),
   ];
-  String? _imagePath;
+  List<PostBlock> _blocks = [];
   bool _posting = false;
 
   @override
   void dispose() {
-    _bodyController.dispose();
     _titleController.dispose();
+    _pollQuestionController.dispose();
     for (final c in _pollOptions) {
       c.dispose();
     }
     super.dispose();
   }
 
-  Future<void> _pickImage() async {
-    final image = await ImagePicker().pickImage(source: ImageSource.gallery);
-    if (image == null) return;
-    final path = await prepareImageForUpload(image);
-    if (mounted) setState(() => _imagePath = path);
-  }
-
   Future<void> _submit() async {
-    final body = _bodyController.text.trim();
-    if (body.isEmpty) {
-      showMenzoToast(context, 'Escribe algo antes de publicar.');
-      return;
-    }
     if (_mode == _ComposeMode.poll) {
+      final question = _pollQuestionController.text.trim();
+      if (question.isEmpty) {
+        showMenzoToast(context, 'Escribe algo antes de publicar.');
+        return;
+      }
       final options = _pollOptions
           .map((c) => c.text.trim())
           .where((t) => t.isNotEmpty)
@@ -67,25 +65,26 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
         showMenzoToast(context, 'Agrega al menos 2 opciones para la encuesta.');
         return;
       }
+    } else if (!_hasRealContent(_blocks)) {
+      showMenzoToast(context, 'Escribe algo antes de publicar.');
+      return;
     }
     setState(() => _posting = true);
     try {
-      String? uploadedUri;
-      if (_mode == _ComposeMode.image && _imagePath != null) {
-        uploadedUri = await ref
-            .read(uploadsRepositoryProvider)
-            .upload(File(_imagePath!));
-      }
+      final hasMedia = _blocks.any(
+        (b) => b.type == PostBlockType.image || b.type == PostBlockType.gif,
+      );
       await ref.read(postRepositoryProvider).create({
         'type': switch (_mode) {
-          _ComposeMode.text => 'text',
-          _ComposeMode.image => 'image',
+          _ComposeMode.text => hasMedia ? 'image' : 'text',
+          _ComposeMode.image => hasMedia ? 'image' : 'text',
           _ComposeMode.poll => 'poll',
         },
         if (_titleController.text.trim().isNotEmpty)
           'title': _titleController.text.trim(),
-        'body': body,
-        if (uploadedUri != null) 'imageUri': uploadedUri,
+        'body': _mode == _ComposeMode.poll ? _pollQuestionController.text.trim() : '',
+        if (_mode != _ComposeMode.poll)
+          'blocks': _blocks.map((b) => b.toJson()).toList(),
         if (_mode == _ComposeMode.poll)
           'pollOptions': _pollOptions
               .map((c) => c.text.trim())
@@ -95,8 +94,9 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       ref.invalidate(feedProvider);
       if (mounted) Navigator.of(context).pop();
     } catch (_) {
-      if (mounted)
+      if (mounted) {
         showMenzoToast(context, 'No pudimos publicar. Intenta de nuevo.');
+      }
     } finally {
       if (mounted) setState(() => _posting = false);
     }
@@ -130,42 +130,13 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
               decoration: const InputDecoration(hintText: 'Título (opcional)'),
             ),
             const SizedBox(height: 10),
-            TextField(
-              controller: _bodyController,
-              style: AppTextStyles.body(),
-              maxLines: 5,
-              decoration: const InputDecoration(
-                hintText: '¿Qué quieres compartir?',
-              ),
-            ),
-            if (_mode == _ComposeMode.image) ...[
-              const SizedBox(height: 12),
-              GestureDetector(
-                onTap: _pickImage,
-                child: Container(
-                  height: 160,
-                  decoration: BoxDecoration(
-                    color: AppColors.surfaceSecondary,
-                    borderRadius: BorderRadius.circular(AppRadius.lg),
-                    image: _imagePath != null
-                        ? DecorationImage(
-                            image: FileImage(File(_imagePath!)),
-                            fit: BoxFit.cover,
-                          )
-                        : null,
-                  ),
-                  alignment: Alignment.center,
-                  child: _imagePath == null
-                      ? const Icon(
-                          Icons.add_photo_alternate_outlined,
-                          size: 32,
-                          color: AppColors.textMuted,
-                        )
-                      : null,
-                ),
-              ),
-            ],
             if (_mode == _ComposeMode.poll) ...[
+              TextField(
+                controller: _pollQuestionController,
+                style: AppTextStyles.body(),
+                maxLines: 3,
+                decoration: const InputDecoration(hintText: 'Escribe tu pregunta'),
+              ),
               const SizedBox(height: 12),
               ..._pollOptions.asMap().entries.map(
                 (entry) => Padding(
@@ -186,7 +157,11 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                   icon: const Icon(Icons.add, size: 18),
                   label: const Text('Agregar opción'),
                 ),
-            ],
+            ] else
+              BlockEditor(
+                blocks: _blocks,
+                onChanged: (blocks) => setState(() => _blocks = blocks),
+              ),
             const SizedBox(height: 20),
             GradientButton(
               label: 'Publicar',

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/repositories/auth_repository.dart';
 import '../../data/repositories/chat_repository.dart';
 import '../../data/repositories/community_repository.dart';
+import '../../data/repositories/gifs_repository.dart';
 import '../../data/repositories/live_repository.dart';
 import '../../data/repositories/music_repository.dart';
 import '../../data/repositories/post_repository.dart';
@@ -44,4 +45,7 @@ final activityRepositoryProvider = Provider<ActivityRepository>(
 );
 final uploadsRepositoryProvider = Provider<UploadsRepository>(
   (ref) => UploadsRepository(ref.watch(apiClientProvider)),
+);
+final gifsRepositoryProvider = Provider<GifsRepository>(
+  (ref) => GifsRepository(ref.watch(apiClientProvider)),
 );

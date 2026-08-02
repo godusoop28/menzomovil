@@ -76,7 +76,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
               data: (p) => ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
-                  PostCard(post: p),
+                  PostCard(post: p, fullContent: true),
                   if (p.type == PostType.poll && p.pollOptions.isNotEmpty) ...[
                     const SizedBox(height: 12),
                     ...p.pollOptions.map((o) {

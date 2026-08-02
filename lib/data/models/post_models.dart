@@ -41,6 +41,52 @@ class AbstractVisual {
   );
 }
 
+/// Espejo de PostBlock.java (backend) — `type` decide qué otros campos importan: paragraph/
+/// heading usan `text`; image/gif usan `url` (siempre https, nunca un path local) y opcionalmente
+/// `alt`; divider no usa ninguno. `id` es generado por el cliente, solo para keys de
+/// ReorderableListView al reordenar — el backend nunca le da significado propio.
+enum PostBlockType { paragraph, heading, image, gif, divider }
+
+PostBlockType postBlockTypeFromJson(String value) => PostBlockType.values.firstWhere(
+  (e) => e.name == value,
+  orElse: () => PostBlockType.paragraph,
+);
+
+class PostBlock {
+  const PostBlock({
+    required this.id,
+    required this.type,
+    this.text,
+    this.url,
+    this.alt,
+  });
+
+  final String id;
+  final PostBlockType type;
+  final String? text;
+  final String? url;
+  final String? alt;
+
+  factory PostBlock.fromJson(Map<String, dynamic> json) => PostBlock(
+    id: json['id'] as String,
+    type: postBlockTypeFromJson(json['type'] as String),
+    text: json['text'] as String?,
+    url: json['url'] as String?,
+    alt: json['alt'] as String?,
+  );
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'type': type.name,
+    'text': text,
+    'url': url,
+    'alt': alt,
+  };
+
+  PostBlock copyWith({String? text}) =>
+      PostBlock(id: id, type: type, text: text ?? this.text, url: url, alt: alt);
+}
+
 class Post {
   const Post({
     required this.id,
@@ -60,6 +106,7 @@ class Post {
     required this.commentCount,
     required this.featured,
     required this.createdAt,
+    required this.blocks,
   });
 
   final String id;
@@ -79,6 +126,7 @@ class Post {
   final int commentCount;
   final bool featured;
   final DateTime createdAt;
+  final List<PostBlock> blocks;
 
   factory Post.fromJson(Map<String, dynamic> json) => Post(
     id: json['id'] as String,
@@ -104,6 +152,9 @@ class Post {
     commentCount: json['commentCount'] as int? ?? 0,
     featured: json['featured'] as bool? ?? false,
     createdAt: parseInstant(json['createdAt'] as String),
+    blocks: (json['blocks'] as List? ?? const [])
+        .map((e) => PostBlock.fromJson(e as Map<String, dynamic>))
+        .toList(),
   );
 
   Post copyWith({
@@ -130,6 +181,7 @@ class Post {
     commentCount: commentCount ?? this.commentCount,
     featured: featured,
     createdAt: createdAt,
+    blocks: blocks,
   );
 }
 

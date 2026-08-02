@@ -9,13 +9,19 @@ import '../../core/theme/app_gradients.dart';
 import '../../core/theme/app_radius.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../data/models/post_models.dart';
+import '../post/post_block_renderer.dart';
 import '../shared/menzo_avatar.dart';
 
 /// 1:1 con menzoweb/components/PostCard.tsx (versión simplificada — sin AbstractArtwork
 /// generado, se usa un degradado de marca de respaldo cuando no hay imagen).
+///
+/// `fullContent` distingue la tarjeta compacta del feed (preview truncado a 4 líneas, portada
+/// única) de la vista de detalle (`PostDetailScreen`, que reusa este mismo widget en vez de
+/// duplicar el header/like/bookmark row) — ahí sí se ve el post entero vía [PostBlockRenderer].
 class PostCard extends ConsumerStatefulWidget {
-  const PostCard({super.key, required this.post});
+  const PostCard({super.key, required this.post, this.fullContent = false});
   final Post post;
+  final bool fullContent;
 
   @override
   ConsumerState<PostCard> createState() => _PostCardState();
@@ -82,8 +88,21 @@ class _PostCardState extends ConsumerState<PostCard> {
   @override
   Widget build(BuildContext context) {
     final post = _post;
+    // Preview compacto para la tarjeta, no el post completo — `post.body` ya es un excerpt de
+    // solo texto derivado server-side de `blocks` (ver PostService.deriveBodyFromBlocks en el
+    // backend), así que sigue sirviendo tal cual acá. La portada usa la primera imagen/gif de los
+    // bloques si no hay `imageUri` legacy — el resto de los bloques solo se ven al entrar al post
+    // (ver PostBlockRenderer en post_detail_screen.dart).
+    final coverImage =
+        post.imageUri ??
+        post.blocks
+            .firstWhere(
+              (b) => b.type == PostBlockType.image || b.type == PostBlockType.gif,
+              orElse: () => const PostBlock(id: '', type: PostBlockType.divider),
+            )
+            .url;
     return GestureDetector(
-      onTap: () => context.push('/post/${post.id}'),
+      onTap: widget.fullContent ? null : () => context.push('/post/${post.id}'),
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
@@ -114,12 +133,18 @@ class _PostCardState extends ConsumerState<PostCard> {
             const SizedBox(height: 10),
             if (post.title != null)
               Text(post.title!, style: AppTextStyles.h3()),
-            Text(
-              post.body,
-              style: AppTextStyles.body(color: AppColors.textSecondary),
-              maxLines: 4,
-              overflow: TextOverflow.ellipsis,
-            ),
+            if (widget.fullContent && post.blocks.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: PostBlockRenderer(blocks: post.blocks),
+              )
+            else
+              Text(
+                post.body,
+                style: AppTextStyles.body(color: AppColors.textSecondary),
+                maxLines: widget.fullContent ? null : 4,
+                overflow: widget.fullContent ? TextOverflow.visible : TextOverflow.ellipsis,
+              ),
             if (post.type == PostType.poll && post.pollOptions.isNotEmpty) ...[
               const SizedBox(height: 10),
               _PollOptions(
@@ -127,18 +152,18 @@ class _PostCardState extends ConsumerState<PostCard> {
                 disabled: _voting,
                 onVote: _vote,
               ),
-            ] else if (post.imageUri != null) ...[
+            ] else if (!(widget.fullContent && post.blocks.isNotEmpty) && coverImage != null) ...[
               const SizedBox(height: 10),
               ClipRRect(
                 borderRadius: BorderRadius.circular(AppRadius.md),
                 child: CachedNetworkImage(
-                  imageUrl: post.imageUri!,
-                  height: 180,
+                  imageUrl: coverImage,
+                  height: widget.fullContent ? null : 180,
                   width: double.infinity,
                   fit: BoxFit.cover,
                 ),
               ),
-            ] else
+            ] else if (!(widget.fullContent && post.blocks.isNotEmpty) && coverImage == null)
               Container(
                 margin: const EdgeInsets.only(top: 10),
                 height: 6,
