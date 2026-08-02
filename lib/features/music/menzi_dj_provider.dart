@@ -16,6 +16,7 @@ import '../../core/providers/repository_providers.dart';
 import '../../data/models/music_models.dart';
 import '../live/live_provider.dart';
 import 'menzi_dj_player_html.dart';
+import 'menzi_player_display_mode.dart';
 
 const _driftCheckInterval = Duration(seconds: 15);
 // Bandas de corrección (Fase 9): <1.5s no se toca nada; 1.5-4s corrección suave (playback rate
@@ -121,14 +122,17 @@ class MenziDjState {
     this.session,
     this.loading = false,
     this.loadError = false,
-    this.expanded = false,
-    this.videoHidden = false,
+    this.displayMode = MenziPlayerDisplayMode.mini,
     this.localMuted = false,
     this.localVolume = _defaultVolume,
     this.playerReady = false,
     this.playerErrorCode,
     this.playerErrorVideoId,
     this.autoplayBlocked = false,
+    this.needsManualResume = false,
+    this.unexpectedPauseCount = 0,
+    this.lastPauseReason,
+    this.videoSlotRect,
   });
 
   final MusicSession? session;
@@ -141,13 +145,11 @@ class MenziDjState {
   /// genuinamente vacío — parecía que Menzi DJ "no cargaba nada" sin ninguna pista de que en
   /// realidad había fallado una petición. Ver [MenziDjNotifier.refresh].
   final bool loadError;
-  final bool expanded;
 
-  /// El usuario ocultó la vista previa flotante del video desde el panel de Menzi DJ — el
-  /// WebView sigue montado y reproduciendo audio normalmente, solo se deja de mostrar/mover el
-  /// recuadro visible. Nunca se cambia desde la burbuja misma (no es tocable, ver
-  /// menzi_dj_player_host.dart), solo desde controles reales del panel.
-  final bool videoHidden;
+  /// Modo visual del ÚNICO WebView persistente — ver [MenziPlayerDisplayMode]. Cambiar esto
+  /// NUNCA crea, destruye ni intercambia el `WebViewWidget`/controller (ver
+  /// menzi_dj_player_host.dart); solo cambia tamaño/posición/capas encima.
+  final MenziPlayerDisplayMode displayMode;
   final bool localMuted;
   final int localVolume;
   final bool playerReady;
@@ -164,6 +166,24 @@ class MenziDjState {
   /// habilite el audio con un toque genuino.
   final bool autoplayBlocked;
 
+  /// true cuando la recuperación automática de una pausa inesperada (ver
+  /// [MenziDjNotifier._attemptUnexpectedPauseRecovery]) agotó sus reintentos sin éxito — la UI
+  /// debe ofrecer "Menzi DJ se pausó. Toca para continuar" en vez de seguir reintentando sola.
+  final bool needsManualResume;
+
+  /// Contador de diagnóstico (Fase 19) — cuántas veces se detectó un `state=2` sin ninguna razón
+  /// válida en esta sesión de LIVE. Nunca se resetea salvo al cambiar de sala.
+  final int unexpectedPauseCount;
+  final MenziPauseReason? lastPauseReason;
+
+  /// Rectángulo (coordenadas de pantalla) donde el panel de Menzi DJ (menzi_dj_panel.dart)
+  /// reservó espacio para el video en modo `normal`/`cinema` — lo mide y reporta el panel mismo
+  /// (ver [MenziDjNotifier.reportVideoSlotRect]) después de cada frame, así el WebView flotante
+  /// (que sigue viviendo en la raíz del árbol, nunca dentro del sheet) se puede posicionar para
+  /// que VISUALMENTE coincida con el hueco reservado, sin taparle controles al panel. Puramente
+  /// local — nunca se persiste ni se manda a ningún lado.
+  final Rect? videoSlotRect;
+
   bool get hasTrack => session?.currentVideoId != null;
   bool get hasPlayerError =>
       playerErrorCode != null && playerErrorVideoId == session?.currentVideoId;
@@ -173,8 +193,7 @@ class MenziDjState {
     bool clearSession = false,
     bool? loading,
     bool? loadError,
-    bool? expanded,
-    bool? videoHidden,
+    MenziPlayerDisplayMode? displayMode,
     bool? localMuted,
     int? localVolume,
     bool? playerReady,
@@ -182,12 +201,16 @@ class MenziDjState {
     bool clearPlayerError = false,
     String? playerErrorVideoId,
     bool? autoplayBlocked,
+    bool? needsManualResume,
+    int? unexpectedPauseCount,
+    MenziPauseReason? lastPauseReason,
+    Rect? videoSlotRect,
+    bool clearVideoSlotRect = false,
   }) => MenziDjState(
     session: clearSession ? null : (session ?? this.session),
     loading: loading ?? this.loading,
     loadError: loadError ?? this.loadError,
-    expanded: expanded ?? this.expanded,
-    videoHidden: videoHidden ?? this.videoHidden,
+    displayMode: displayMode ?? this.displayMode,
     localMuted: localMuted ?? this.localMuted,
     localVolume: localVolume ?? this.localVolume,
     playerReady: playerReady ?? this.playerReady,
@@ -198,6 +221,10 @@ class MenziDjState {
         ? null
         : (playerErrorVideoId ?? this.playerErrorVideoId),
     autoplayBlocked: autoplayBlocked ?? this.autoplayBlocked,
+    needsManualResume: needsManualResume ?? this.needsManualResume,
+    unexpectedPauseCount: unexpectedPauseCount ?? this.unexpectedPauseCount,
+    lastPauseReason: lastPauseReason ?? this.lastPauseReason,
+    videoSlotRect: clearVideoSlotRect ? null : (videoSlotRect ?? this.videoSlotRect),
   );
 }
 
@@ -242,6 +269,26 @@ class MenziDjNotifier extends Notifier<MenziDjState>
   /// desincronizado del estado global (split-brain: dos instancias de YouTube, cada una con su
   /// propia posición/volumen, ninguna obedeciendo confiablemente pause/resume/seek remotos).
   bool _isBackgrounded = false;
+
+  /// Debounce del lifecycle (Fase 6) — `AppLifecycleState.inactive` puede dispararse por cosas
+  /// completamente ajenas a "el usuario minimizó la app" (un diálogo del sistema, un selector de
+  /// permisos, una notificación, una llamada entrante) y NUNCA debe pausar por sí solo. Solo
+  /// `paused`/`hidden`/`detached` sostenidos por más de [_backgroundDebounce] cuentan como
+  /// background real — un `inactive` seguido rápido de `resumed` (el caso típico de esos
+  /// diálogos) se cancela acá sin llegar a pausar nada.
+  Timer? _backgroundDebounceTimer;
+  static const _backgroundDebounce = Duration(milliseconds: 400);
+
+  /// Última razón por la que ESTE dispositivo mandó `pause` — ver [MenziPauseReason] y
+  /// [_sendPauseCommand]. Sirve para que, cuando llega la confirmación (`state=2`) de ese mismo
+  /// comando, no se la confunda con una pausa inexplicada (ver [classifyLocalPause]).
+  MenziPauseReason? _lastCommandedPauseReason;
+  DateTime? _lastCommandedPauseAt;
+
+  /// Bookkeeping de la recuperación automática de pausas inesperadas (Fase 7) — máximo 2
+  /// reintentos por ventana de 10s, nunca en bucle infinito.
+  int _unexpectedPauseRecoveryAttempts = 0;
+  DateTime? _unexpectedPauseWindowStart;
 
   /// Último `YT.PlayerState` reportado por el bridge (ver [YtPlayerState]). Mientras el player
   /// está en `buffering`, su posición real queda momentáneamente congelada por una razón
@@ -350,10 +397,24 @@ class MenziDjNotifier extends Notifier<MenziDjState>
   @override
   void didChangeAppLifecycleState(AppLifecycleState lifecycleState) {
     if (lifecycleState == AppLifecycleState.paused ||
-        lifecycleState == AppLifecycleState.hidden) {
-      _handleAppBackgrounded();
+        lifecycleState == AppLifecycleState.hidden ||
+        lifecycleState == AppLifecycleState.detached) {
+      // Ver [_backgroundDebounceTimer] — no se pausa de inmediato ni siquiera acá: un
+      // `inactive` fugaz seguido de `paused`/`hidden` genuino (o al revés, un `paused`
+      // reportado justo antes de volver a `resumed`, que también pasa en algunos OEM durante
+      // transiciones cortas) no debe alcanzar a pausar nada si todo se resuelve dentro de la
+      // ventana de debounce.
+      _backgroundDebounceTimer?.cancel();
+      _backgroundDebounceTimer = Timer(_backgroundDebounce, _handleAppBackgrounded);
     } else if (lifecycleState == AppLifecycleState.resumed) {
+      _backgroundDebounceTimer?.cancel();
+      _backgroundDebounceTimer = null;
       _handleAppForegrounded();
+    } else if (lifecycleState == AppLifecycleState.inactive) {
+      // `inactive` NUNCA pausa por sí solo (Fase 6) — puede ser un menú del sistema, un diálogo
+      // de permisos, una llamada entrante, un selector, una notificación. Si de verdad se está
+      // yendo a background, `paused`/`hidden` llega después y arranca el debounce de arriba.
+      _log(DiagnosticCategory.lifecycle, MenziLogLevel.info, 'inactive ignored');
     }
   }
 
@@ -364,13 +425,13 @@ class MenziDjNotifier extends Notifier<MenziDjState>
   void _handleAppBackgrounded() {
     if (_isBackgrounded) return;
     _isBackgrounded = true;
+    _log(DiagnosticCategory.lifecycle, MenziLogLevel.info, 'background confirmed');
     // Descarta cualquier `getTime` del drift-timer que estuviera en vuelo — el WebView está a
     // punto de pausarse y no debe poder seekearse a destiempo (ver el guard `_isBackgrounded`
     // del timer de drift en `_setup`).
     _pendingTimeRequest = null;
     debugPrint('[MenziDJ][${DeviceSession.id}] lifecycle paused — local playback suspended');
-    _log(DiagnosticCategory.lifecycle, MenziLogLevel.info, 'app backgrounded — local playback paused');
-    _sendCommand('pause');
+    _sendPauseCommand(MenziPauseReason.appBackgrounded);
   }
 
   /// Al volver a primer plano: nunca confía en la posición congelada de antes de minimizar como
@@ -382,8 +443,11 @@ class MenziDjNotifier extends Notifier<MenziDjState>
     if (!_isBackgrounded) return;
     _isBackgrounded = false;
     debugPrint('[MenziDJ][${DeviceSession.id}] lifecycle resumed — reconciling with server snapshot');
-    _log(DiagnosticCategory.lifecycle, MenziLogLevel.info, 'app foregrounded — reconciling with server snapshot');
-    refresh();
+    _log(DiagnosticCategory.lifecycle, MenziLogLevel.info, 'foreground resumed');
+    refresh().then((_) {
+      _log(DiagnosticCategory.lifecycle, MenziLogLevel.info, 'snapshot reconciled');
+      _log(DiagnosticCategory.lifecycle, MenziLogLevel.info, 'local playback restored');
+    });
   }
 
   void _setup(String roomId) {
@@ -489,12 +553,92 @@ class MenziDjNotifier extends Notifier<MenziDjState>
     );
   }
 
+  /// Único punto que manda `pause` — SIEMPRE con una razón (Fase 5). Registra cuándo/por qué fue
+  /// este dispositivo el que pausó, así cuando llegue la confirmación `state=2` correspondiente
+  /// [classifyLocalPause] puede reconocerla como "esperada" en vez de marcarla como pausa
+  /// inexplicada.
+  void _sendPauseCommand(MenziPauseReason reason) {
+    _lastCommandedPauseReason = reason;
+    _lastCommandedPauseAt = DateTime.now();
+    _log(DiagnosticCategory.ytCommand, MenziLogLevel.info, 'pause', data: {
+      'instanceId': instanceId,
+      'reason': reason.name,
+    });
+    _sendCommand('pause');
+  }
+
   void _applyLocalAudioState() {
     if (state.localMuted) {
       _sendCommand('mute');
     } else {
       _sendCommand('unmute', {'volume': state.localVolume});
     }
+  }
+
+  /// Se llama en TODO `state=2` que reporte el bridge — la mayoría son perfectamente normales
+  /// (pausa global real, background, un `pause` que este mismo dispositivo acaba de mandar). Solo
+  /// actúa cuando [classifyLocalPause] concluye que no hay ninguna razón válida — exactamente el
+  /// bug confirmado con logs reales (abrir opciones/mover el WebView pausaba sin que existiera
+  /// ningún evento global ni comando local que lo explicara).
+  void _handlePossibleUnexpectedPause() {
+    final reason = classifyLocalPause(
+      sessionStatus: state.session?.status,
+      lastCommandedReason: _lastCommandedPauseReason,
+      lastCommandedAt: _lastCommandedPauseAt,
+      isBackgrounded: _isBackgrounded,
+      now: DateTime.now(),
+    );
+    state = state.copyWith(lastPauseReason: reason);
+    if (reason != MenziPauseReason.unexpectedPlatformPause) return;
+    _log(DiagnosticCategory.ytState, MenziLogLevel.warning, 'unexpected local pause', data: {
+      'instanceId': instanceId,
+      'sessionStatus': state.session?.status.name,
+    });
+    state = state.copyWith(unexpectedPauseCount: state.unexpectedPauseCount + 1);
+    _attemptUnexpectedPauseRecovery();
+  }
+
+  /// Máximo 2 reintentos por ventana de 10s, con un pequeño delay antes de cada uno para darle
+  /// margen al player de recuperarse solo (Fase 7) — nunca un bucle infinito, y nunca reintenta
+  /// si mientras tanto la sesión pasó a pausa global real o el dispositivo se fue a background
+  /// (ambas son razones válidas para seguir pausado).
+  void _attemptUnexpectedPauseRecovery() {
+    final now = DateTime.now();
+    if (_unexpectedPauseWindowStart == null ||
+        now.difference(_unexpectedPauseWindowStart!) > const Duration(seconds: 10)) {
+      _unexpectedPauseWindowStart = now;
+      _unexpectedPauseRecoveryAttempts = 0;
+    }
+    if (_unexpectedPauseRecoveryAttempts >= 2) {
+      _log(DiagnosticCategory.ytState, MenziLogLevel.error, 'unexpected pause recovery exhausted', data: {
+        'instanceId': instanceId,
+      });
+      state = state.copyWith(needsManualResume: true);
+      return;
+    }
+    _unexpectedPauseRecoveryAttempts++;
+    final attempt = _unexpectedPauseRecoveryAttempts;
+    Future.delayed(Duration(milliseconds: 250 * attempt), () {
+      if (_localPlayerState != YtPlayerState.paused) return;
+      if (_isBackgrounded) return;
+      if (state.session?.status != MusicSessionStatus.playing) return;
+      _log(DiagnosticCategory.ytState, MenziLogLevel.info, 'recovering from unexpected pause', data: {
+        'instanceId': instanceId,
+        'attempt': attempt,
+      });
+      _sendCommand('play');
+      _applyLocalAudioState();
+    });
+  }
+
+  /// Botón "Menzi DJ se pausó. Toca para continuar." (Fase 7) — solo aparece cuando la
+  /// recuperación automática ya agotó sus reintentos.
+  void resumeAfterUnexpectedPause() {
+    state = state.copyWith(needsManualResume: false);
+    _unexpectedPauseRecoveryAttempts = 0;
+    _unexpectedPauseWindowStart = null;
+    _sendCommand('play');
+    _applyLocalAudioState();
   }
 
   void _handleBridgeMessage(JavaScriptMessage message) {
@@ -609,8 +753,17 @@ class MenziDjNotifier extends Notifier<MenziDjState>
         '[YT-INSTANCE][${DeviceSession.id}] stateChange id=$instanceId state=${msg['state']}',
       );
       _localPlayerState = (msg['state'] as num).toInt();
-      if (_localPlayerState == YtPlayerState.playing && state.autoplayBlocked) {
-        state = state.copyWith(autoplayBlocked: false);
+      if (_localPlayerState == YtPlayerState.playing) {
+        if (state.autoplayBlocked) state = state.copyWith(autoplayBlocked: false);
+        // Confirmó que sí está reproduciendo — cierra cualquier ventana de recuperación
+        // abierta (Fase 7); el siguiente state=2 inesperado, si lo hay, empieza una nueva.
+        _unexpectedPauseRecoveryAttempts = 0;
+        _unexpectedPauseWindowStart = null;
+        if (state.needsManualResume) {
+          state = state.copyWith(needsManualResume: false);
+        }
+      } else if (_localPlayerState == YtPlayerState.paused) {
+        _handlePossibleUnexpectedPause();
       }
     } else if (type == 'autoplayBlocked') {
       debugPrint(
@@ -683,7 +836,7 @@ class MenziDjNotifier extends Notifier<MenziDjState>
       _applyLocalAudioState();
     } else if (session.status == MusicSessionStatus.paused) {
       _sendCommand('seek', {'seconds': session.positionSeconds});
-      _sendCommand('pause');
+      _sendPauseCommand(MenziPauseReason.global);
     }
   }
 
@@ -845,11 +998,27 @@ class MenziDjNotifier extends Notifier<MenziDjState>
     }
   }
 
-  void setExpanded(bool value) => state = state.copyWith(expanded: value);
+  /// Único punto que cambia el modo visual del player — ver [MenziPlayerDisplayMode]. Jamás
+  /// toca `controller`/`instanceId`/página/iframe (Fase 1-2): el WebView persistente
+  /// (menzi_dj_player_host.dart) solo lee este valor para decidir tamaño/posición/capas, nunca
+  /// para decidir si crear o destruir nada.
+  void setDisplayMode(MenziPlayerDisplayMode mode) {
+    if (state.displayMode == mode) return;
+    _log(DiagnosticCategory.ytInstance, MenziLogLevel.info, 'layout mode changed', data: {
+      'instanceId': instanceId,
+      'from': state.displayMode.name,
+      'to': mode.name,
+    });
+    state = state.copyWith(displayMode: mode);
+  }
 
-  /// Solo cambia si el recuadro flotante del video se muestra o no — el audio sigue igual, el
-  /// WebView nunca se pausa/destruye por esto. Ver el comentario de [MenziDjState.videoHidden].
-  void setVideoHidden(bool value) => state = state.copyWith(videoHidden: value);
+  /// El panel mide el hueco que reservó para el video (modo `normal`/`cinema`) y lo reporta acá
+  /// después de cada frame — ver comentario de [MenziDjState.videoSlotRect]. `null` significa
+  /// "no estoy midiendo nada ahora" (panel cerrado, u otro modo), no "escondelo".
+  void reportVideoSlotRect(Rect? rect) {
+    if (rect == state.videoSlotRect) return;
+    state = state.copyWith(videoSlotRect: rect, clearVideoSlotRect: rect == null);
+  }
 
   void toggleLocalMute() {
     final next = !state.localMuted;
@@ -861,13 +1030,35 @@ class MenziDjNotifier extends Notifier<MenziDjState>
     }
   }
 
-  void setLocalVolume(int value) {
+  DateTime? _lastVolumeCommandAt;
+
+  /// Fase 8: el bridge distingue `unmute` (desmutea Y aplica volumen, dispara
+  /// `scheduleBlockCheck` — ver menzi-player.html) de `volume` (SOLO cambia el número, sin
+  /// reevaluar nada más). Antes esto mandaba `unmute` en cada tick del slider — decenas de
+  /// comandos por segundo durante un solo arrastre, cada uno reevaluando autoplay de nuevo. Ahora
+  /// solo se manda `unmute` en la transición real mute→unmute; cualquier otro cambio de valor usa
+  /// `volume`. El throttle real (que el slider no llame esto en cada pixel) vive en la UI
+  /// (menzi_dj_panel.dart) via [shouldSendThrottledVolume] — acá solo se garantiza que, llame
+  /// quien llame, el comando de bridge correcto es el mínimo necesario.
+  void setLocalVolume(int value, {bool bypassThrottleForFinalValue = false}) {
     final clamped = value.clamp(0, 100);
+    final wasMuted = state.localMuted;
     // Mover el slider mientras está muteado desmutea — mismo comportamiento esperado que
     // cualquier reproductor: no tiene sentido que el número suba y el audio siga en silencio
     // sin ninguna señal de por qué.
     state = state.copyWith(localVolume: clamped, localMuted: false);
-    _sendCommand('unmute', {'volume': clamped});
+    if (wasMuted) {
+      _lastVolumeCommandAt = DateTime.now();
+      _sendCommand('unmute', {'volume': clamped});
+      return;
+    }
+    final now = DateTime.now();
+    if (!bypassThrottleForFinalValue &&
+        !shouldSendThrottledVolume(lastSentAt: _lastVolumeCommandAt, now: now)) {
+      return;
+    }
+    _lastVolumeCommandAt = now;
+    _sendCommand('volume', {'volume': clamped});
   }
 
   int? get _version => state.session?.version;

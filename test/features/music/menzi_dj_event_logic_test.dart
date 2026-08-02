@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:menzomovil/data/models/music_models.dart';
 import 'package:menzomovil/features/music/menzi_dj_player_html.dart';
 import 'package:menzomovil/features/music/menzi_dj_provider.dart';
+import 'package:menzomovil/features/music/menzi_player_display_mode.dart';
 
 /// Cubre las decisiones puras que MenziDjNotifier usa para versionado (Fase 3) y corrección de
 /// drift (Fase 9) — extraídas como funciones libres de estado precisamente para poder probarlas
@@ -151,7 +152,11 @@ void main() {
 
   group('resetStateForRoomChange — bug confirmado con logs reales (joiner sin load)', () {
     test('preserva playerReady=true al cambiar de sala', () {
-      const previous = MenziDjState(playerReady: true, expanded: true, localVolume: 30);
+      const previous = MenziDjState(
+        playerReady: true,
+        displayMode: MenziPlayerDisplayMode.normal,
+        localVolume: 30,
+      );
       final next = resetStateForRoomChange(previous);
       expect(next.playerReady, isTrue);
     });
@@ -165,13 +170,13 @@ void main() {
       const previous = MenziDjState(
         playerReady: true,
         playerErrorCode: 2,
-        expanded: true,
+        displayMode: MenziPlayerDisplayMode.normal,
         autoplayBlocked: true,
       );
       final next = resetStateForRoomChange(previous);
       expect(next.session, isNull);
       expect(next.playerErrorCode, isNull);
-      expect(next.expanded, isFalse);
+      expect(next.displayMode, MenziPlayerDisplayMode.mini);
       expect(next.autoplayBlocked, isFalse);
     });
   });
@@ -318,6 +323,106 @@ void main() {
           sessionCurrentVideoId: null,
         ),
         isFalse,
+      );
+    });
+  });
+
+  group('classifyLocalPause — Fase 5/7 (state=2 abriendo opciones sin ningún pause real)', () {
+    final now = DateTime(2026, 8, 1, 12, 0, 0);
+
+    test('sesión global no-playing → global, sin importar nada más', () {
+      expect(
+        classifyLocalPause(
+          sessionStatus: MusicSessionStatus.paused,
+          lastCommandedReason: null,
+          lastCommandedAt: null,
+          isBackgrounded: false,
+          now: now,
+        ),
+        MenziPauseReason.global,
+      );
+    });
+
+    test('app en background → appBackgrounded', () {
+      expect(
+        classifyLocalPause(
+          sessionStatus: MusicSessionStatus.playing,
+          lastCommandedReason: null,
+          lastCommandedAt: null,
+          isBackgrounded: true,
+          now: now,
+        ),
+        MenziPauseReason.appBackgrounded,
+      );
+    });
+
+    test('un pause propio reciente explica el state=2 con su misma razón', () {
+      expect(
+        classifyLocalPause(
+          sessionStatus: MusicSessionStatus.playing,
+          lastCommandedReason: MenziPauseReason.userLocal,
+          lastCommandedAt: now.subtract(const Duration(seconds: 1)),
+          isBackgrounded: false,
+          now: now,
+        ),
+        MenziPauseReason.userLocal,
+      );
+    });
+
+    test('un pause propio viejo (fuera de la ventana) YA NO explica el state=2', () {
+      expect(
+        classifyLocalPause(
+          sessionStatus: MusicSessionStatus.playing,
+          lastCommandedReason: MenziPauseReason.userLocal,
+          lastCommandedAt: now.subtract(const Duration(seconds: 10)),
+          isBackgrounded: false,
+          now: now,
+        ),
+        MenziPauseReason.unexpectedPlatformPause,
+      );
+    });
+
+    test('sin ninguna razón — exactamente el bug real (abrir opciones, mover el WebView)', () {
+      expect(
+        classifyLocalPause(
+          sessionStatus: MusicSessionStatus.playing,
+          lastCommandedReason: null,
+          lastCommandedAt: null,
+          isBackgrounded: false,
+          now: now,
+        ),
+        MenziPauseReason.unexpectedPlatformPause,
+      );
+    });
+  });
+
+  group('shouldSendThrottledVolume — Fase 8 (slider ya no manda decenas de unmute por segundo)', () {
+    test('siempre manda si nunca se mandó nada antes', () {
+      expect(
+        shouldSendThrottledVolume(lastSentAt: null, now: DateTime(2026, 8, 1, 12, 0, 0)),
+        isTrue,
+      );
+    });
+
+    test('NO manda si pasó menos del intervalo mínimo', () {
+      final lastSentAt = DateTime(2026, 8, 1, 12, 0, 0);
+      expect(
+        shouldSendThrottledVolume(
+          lastSentAt: lastSentAt,
+          now: lastSentAt.add(const Duration(milliseconds: 30)),
+        ),
+        isFalse,
+      );
+    });
+
+    test('manda de nuevo una vez pasado el intervalo mínimo', () {
+      final lastSentAt = DateTime(2026, 8, 1, 12, 0, 0);
+      expect(
+        shouldSendThrottledVolume(
+          lastSentAt: lastSentAt,
+          now: lastSentAt.add(const Duration(milliseconds: 80)),
+        ),
+        isTrue,
       );
     });
   });
