@@ -12,7 +12,10 @@ import '../../core/theme/app_text_styles.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../data/models/chat_models.dart';
 import '../../data/models/live_models.dart';
+import '../../data/models/music_models.dart';
+import '../music/dj_menzi_orb.dart';
 import '../music/menzi_dj_panel.dart';
+import '../music/menzi_dj_provider.dart';
 import '../shared/confirm_dialog.dart';
 import '../shared/menzi_illustration_state.dart';
 import '../shared/menzo_avatar.dart';
@@ -27,7 +30,7 @@ const _stageRoles = {
 };
 
 /// 1:1 con menzoweb/components/live/LiveRoomPanel.tsx — panel de pantalla completa del LIVE:
-/// escenario de hablantes, anuncio, temporizador, audiencia, moderación y entrada a Menzi DJ.
+/// escenario de hablantes, anuncio, temporizador, audiencia, moderación y entrada a DJ Menzi.
 class LiveRoomPanel extends ConsumerStatefulWidget {
   const LiveRoomPanel({
     super.key,
@@ -47,7 +50,7 @@ class _LiveRoomPanelState extends ConsumerState<LiveRoomPanel> {
   void initState() {
     super.initState();
     // Mientras este panel está montado, los overlays persistentes (mini-bar de voz, mini-bar
-    // de Menzi DJ) deben quedar ocultos — si no, sus controles fijos (posicionados a un número
+    // de DJ Menzi) deben quedar ocultos — si no, sus controles fijos (posicionados a un número
     // de píxeles del borde inferior de TODA la pantalla) pueden terminar superpuestos a los
     // propios controles del panel (mic/salir), que también viven abajo de todo. Se marca acá en
     // vez de inferirlo de la ruta actual porque un `Navigator.push` común (como este) no cambia
@@ -69,6 +72,7 @@ class _LiveRoomPanelState extends ConsumerState<LiveRoomPanel> {
   @override
   Widget build(BuildContext context) {
     final live = ref.watch(liveProvider);
+    final music = ref.watch(menziDjProvider);
     final myId = ref.watch(authProvider).profile?.id;
     final isConnectedHere = live.activeRoomId == room.id;
     final stage = isConnectedHere
@@ -211,6 +215,18 @@ class _LiveRoomPanelState extends ConsumerState<LiveRoomPanel> {
                       ],
                     ),
                   ),
+                if (music.hasTrack)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: DjMenziOrb(
+                      playing: music.session?.status == MusicSessionStatus.playing,
+                      voiceLevel: live.speakingLevels.values.isEmpty
+                          ? 0
+                          : live.speakingLevels.values.reduce((a, b) => a > b ? a : b),
+                      title: music.session?.currentTitle,
+                      onTap: () => showMenziDjPanel(context, room: room),
+                    ),
+                  ),
                 Expanded(
                   child: GridView.builder(
                     padding: const EdgeInsets.all(16),
@@ -264,7 +280,7 @@ class _BubbleOptInPromptState extends State<_BubbleOptInPrompt> {
   /// que un solo "Ahora no" tocado una vez, alguna vez, dejaba el permiso sin volver a pedirse
   /// NUNCA MÁS. Ahora se vuelve a preguntar en cada LIVE nuevo (una vez por sesión de la app)
   /// mientras el permiso siga sin concederse de verdad — este permiso de overlay es solo para
-  /// la burbuja del LIVE; Menzi DJ ya no depende de él (el reproductor nativo de fondo que sí
+  /// la burbuja del LIVE; DJ Menzi ya no depende de él (el reproductor nativo de fondo que sí
   /// lo necesitaba se retiró, ver MENZI_DJ_ARCHITECTURE.md).
   static bool _declinedThisSession = false;
 
@@ -288,7 +304,7 @@ class _BubbleOptInPromptState extends State<_BubbleOptInPrompt> {
       context,
       title: 'Mantené el LIVE activo al minimizar',
       description:
-          'Menzo necesita este permiso para que tu voz y Menzi DJ sigan sonando cuando minimizás la app o usás otra — además vas a ver una burbuja para volver rápido a la llamada. Sin esto, el audio se corta al salir de Menzo.',
+          'Menzo necesita este permiso para que tu voz y DJ Menzi sigan sonando cuando minimizás la app o usás otra — además vas a ver una burbuja para volver rápido a la llamada. Sin esto, el audio se corta al salir de Menzo.',
       confirmLabel: 'Permitir',
       cancelLabel: 'Ahora no',
     );
