@@ -44,6 +44,36 @@ RelationshipStatus _relationshipFromJson(String value) {
   }
 }
 
+/// Ascendente en poder — mismo orden que Role.java en el backend. Nunca se asigna MASTER desde
+/// la UI: esa cuenta queda fija a la única configurada en menzo.admin.master-email.
+enum GlobalRole { user, curator, leader, master }
+
+GlobalRole _globalRoleFromJson(String value) {
+  switch (value) {
+    case 'CURATOR':
+      return GlobalRole.curator;
+    case 'LEADER':
+      return GlobalRole.leader;
+    case 'MASTER':
+      return GlobalRole.master;
+    default:
+      return GlobalRole.user;
+  }
+}
+
+String globalRoleToJson(GlobalRole role) {
+  switch (role) {
+    case GlobalRole.curator:
+      return 'CURATOR';
+    case GlobalRole.leader:
+      return 'LEADER';
+    case GlobalRole.master:
+      return 'MASTER';
+    case GlobalRole.user:
+      return 'USER';
+  }
+}
+
 class UserProfile {
   const UserProfile({
     required this.id,
@@ -71,6 +101,7 @@ class UserProfile {
     required this.followsMe,
     required this.areFriends,
     required this.relationshipStatus,
+    required this.globalRole,
   });
 
   final String id;
@@ -98,6 +129,7 @@ class UserProfile {
   final bool followsMe;
   final bool areFriends;
   final RelationshipStatus relationshipStatus;
+  final GlobalRole globalRole;
 
   factory UserProfile.fromJson(Map<String, dynamic> json) => UserProfile(
     id: json['id'] as String,
@@ -127,6 +159,7 @@ class UserProfile {
     relationshipStatus: _relationshipFromJson(
       json['relationshipStatus'] as String? ?? 'NONE',
     ),
+    globalRole: _globalRoleFromJson(json['globalRole'] as String? ?? 'USER'),
   );
 
   UserSummary toSummary() => UserSummary(

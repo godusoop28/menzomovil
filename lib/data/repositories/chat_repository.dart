@@ -69,6 +69,7 @@ class ChatRepository {
     String body, {
     String? imageUri,
     String? replyToMessageId,
+    String? stickerId,
   }) async => ChatMessage.fromJson(
     await _client.post<Map<String, dynamic>>(
       '/api/chat/rooms/$roomId/messages',
@@ -76,9 +77,19 @@ class ChatRepository {
         'body': body,
         'imageUri': imageUri,
         'replyToMessageId': replyToMessageId,
+        'stickerId': stickerId,
       },
     ),
   );
+
+  /// El autor siempre puede borrar el suyo, sin motivo. Un no-autor necesita ser CURATOR+ global
+  /// y la sala no puede ser DIRECT (el backend lo re-verifica siempre, ver ChatService.deleteMessage
+  /// en menzoapi) — acá solo se ofrece el botón cuando ya sabemos que no va a rebotar.
+  Future<void> deleteMessage(String roomId, String messageId, {String? reason}) =>
+      _client.delete<void>(
+        '/api/chat/rooms/$roomId/messages/$messageId',
+        body: reason != null ? {'reason': reason} : null,
+      );
 
   Future<List<RoomMember>> members(String roomId) async =>
       (await _client.get<List<dynamic>>(

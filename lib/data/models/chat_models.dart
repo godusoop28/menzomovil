@@ -196,7 +196,31 @@ class RoomBan {
   );
 }
 
-enum MessageType { text, system }
+enum MessageType { text, system, sticker }
+
+MessageType _messageTypeFromJson(String value) {
+  switch (value) {
+    case 'system':
+      return MessageType.system;
+    case 'sticker':
+      return MessageType.sticker;
+    default:
+      return MessageType.text;
+  }
+}
+
+class MessageStickerPreview {
+  const MessageStickerPreview({required this.id, required this.imageUrl});
+
+  final String id;
+  final String imageUrl;
+
+  factory MessageStickerPreview.fromJson(Map<String, dynamic> json) =>
+      MessageStickerPreview(
+        id: json['id'] as String,
+        imageUrl: json['imageUrl'] as String,
+      );
+}
 
 class MessageReplyPreview {
   const MessageReplyPreview({
@@ -230,6 +254,8 @@ class ChatMessage {
     required this.type,
     required this.createdAt,
     required this.replyTo,
+    required this.deleted,
+    required this.sticker,
   });
 
   final String id;
@@ -240,6 +266,8 @@ class ChatMessage {
   final MessageType type;
   final DateTime createdAt;
   final MessageReplyPreview? replyTo;
+  final bool deleted;
+  final MessageStickerPreview? sticker;
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) => ChatMessage(
     id: json['id'] as String,
@@ -249,10 +277,14 @@ class ChatMessage {
         : null,
     body: json['body'] as String,
     imageUri: json['imageUri'] as String?,
-    type: json['type'] == 'system' ? MessageType.system : MessageType.text,
+    type: _messageTypeFromJson(json['type'] as String? ?? 'text'),
     createdAt: parseInstant(json['createdAt'] as String),
     replyTo: json['replyTo'] != null
         ? MessageReplyPreview.fromJson(json['replyTo'] as Map<String, dynamic>)
+        : null,
+    deleted: json['deleted'] as bool? ?? false,
+    sticker: json['sticker'] != null
+        ? MessageStickerPreview.fromJson(json['sticker'] as Map<String, dynamic>)
         : null,
   );
 }

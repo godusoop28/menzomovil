@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/repositories/admin_repository.dart';
 import '../../data/repositories/auth_repository.dart';
 import '../../data/repositories/chat_repository.dart';
 import '../../data/repositories/community_repository.dart';
@@ -7,6 +8,7 @@ import '../../data/repositories/gifs_repository.dart';
 import '../../data/repositories/live_repository.dart';
 import '../../data/repositories/music_repository.dart';
 import '../../data/repositories/post_repository.dart';
+import '../../data/repositories/sticker_repository.dart';
 import '../../data/repositories/uploads_repository.dart';
 import '../../data/repositories/user_repository.dart';
 import '../network/api_client.dart';
@@ -48,4 +50,10 @@ final uploadsRepositoryProvider = Provider<UploadsRepository>(
 );
 final gifsRepositoryProvider = Provider<GifsRepository>(
   (ref) => GifsRepository(ref.watch(apiClientProvider)),
+);
+final adminRepositoryProvider = Provider<AdminRepository>(
+  (ref) => AdminRepository(ref.watch(apiClientProvider)),
+);
+final stickerRepositoryProvider = Provider<StickerRepository>(
+  (ref) => StickerRepository(ref.watch(apiClientProvider)),
 );

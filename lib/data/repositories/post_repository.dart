@@ -56,7 +56,12 @@ class PostRepository {
     await _client.post<Map<String, dynamic>>('/api/posts', body: body),
   );
 
-  Future<void> remove(String id) => _client.delete<void>('/api/posts/$id');
+  // body solo hace falta cuando quien borra no es el autor (staff LEADER+, motivo obligatorio) —
+  // ver PostController.deletePost/PostService.deletePost en menzoapi.
+  Future<void> remove(String id, {String? reason}) => _client.delete<void>(
+    '/api/posts/$id',
+    body: reason != null ? {'reason': reason} : null,
+  );
   Future<void> like(String id) => _client.put<void>('/api/posts/$id/like');
   Future<void> unlike(String id) => _client.delete<void>('/api/posts/$id/like');
   Future<void> bookmark(String id) =>

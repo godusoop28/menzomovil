@@ -106,6 +106,12 @@ class LiveRepository {
       .post<void>('/api/chat/rooms/$roomId/live/participants/$userId/demote');
   Future<void> muteParticipant(String roomId, String userId) => _client
       .post<void>('/api/chat/rooms/$roomId/live/participants/$userId/mute');
-  Future<void> removeParticipant(String roomId, String userId) =>
-      _client.delete<void>('/api/chat/rooms/$roomId/live/participants/$userId');
+  // reason solo hace falta cuando quien expulsa es CURATOR+ global sin ser miembro de la sala
+  // (el camino del anfitrión de siempre sigue sin motivo) — ver LiveService.removeParticipant en
+  // menzoapi.
+  Future<void> removeParticipant(String roomId, String userId, {String? reason}) =>
+      _client.delete<void>(
+        '/api/chat/rooms/$roomId/live/participants/$userId',
+        body: reason != null ? {'reason': reason} : null,
+      );
 }

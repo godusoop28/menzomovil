@@ -2,11 +2,18 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../data/models/user_models.dart';
+import '../../features/admin/admin_dashboard_screen.dart';
+import '../../features/admin/admin_moderation_log_screen.dart';
+import '../../features/admin/admin_posts_screen.dart';
+import '../../features/admin/admin_roles_screen.dart';
+import '../../features/admin/admin_users_screen.dart';
 import '../../features/auth/login_screen.dart';
 import '../../features/auth/register_screen.dart';
 import '../../features/chat/chat_list_screen.dart';
 import '../../features/chat/chat_public_screen.dart';
 import '../../features/chat/chat_room_screen.dart';
+import '../../features/chat/create_sticker_pack_screen.dart';
 import '../../features/chat/room_members_screen.dart';
 import '../../features/events/event_detail_screen.dart';
 import '../../features/events/events_screen.dart';
@@ -64,6 +71,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       if (!auth.onboardingCompleted && !isOnboardingRoute)
         return '/onboarding/name';
       if (auth.onboardingCompleted && isOnboardingRoute) return '/';
+      final isAdminRoute = loc.startsWith('/admin');
+      if (isAdminRoute &&
+          (auth.profile == null || auth.profile!.globalRole == GlobalRole.user)) {
+        return '/';
+      }
       return null;
     },
     routes: [
@@ -150,6 +162,30 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/chat/:id/members',
         builder: (context, state) =>
             RoomMembersScreen(roomId: state.pathParameters['id']!),
+      ),
+      GoRoute(
+        path: '/stickers/create',
+        builder: (context, state) => const CreateStickerPackScreen(),
+      ),
+      GoRoute(
+        path: '/admin',
+        builder: (context, state) => const AdminDashboardScreen(),
+      ),
+      GoRoute(
+        path: '/admin/users',
+        builder: (context, state) => const AdminUsersScreen(),
+      ),
+      GoRoute(
+        path: '/admin/posts',
+        builder: (context, state) => const AdminPostsScreen(),
+      ),
+      GoRoute(
+        path: '/admin/roles',
+        builder: (context, state) => const AdminRolesScreen(),
+      ),
+      GoRoute(
+        path: '/admin/moderation-log',
+        builder: (context, state) => const AdminModerationLogScreen(),
       ),
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) =>

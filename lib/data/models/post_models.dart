@@ -107,6 +107,7 @@ class Post {
     required this.featured,
     required this.createdAt,
     required this.blocks,
+    required this.hidden,
   });
 
   final String id;
@@ -127,6 +128,7 @@ class Post {
   final bool featured;
   final DateTime createdAt;
   final List<PostBlock> blocks;
+  final bool hidden;
 
   factory Post.fromJson(Map<String, dynamic> json) => Post(
     id: json['id'] as String,
@@ -155,6 +157,7 @@ class Post {
     blocks: (json['blocks'] as List? ?? const [])
         .map((e) => PostBlock.fromJson(e as Map<String, dynamic>))
         .toList(),
+    hidden: json['hidden'] as bool? ?? false,
   );
 
   Post copyWith({
@@ -163,6 +166,7 @@ class Post {
     bool? bookmarkedByMe,
     int? commentCount,
     List<PollOption>? pollOptions,
+    bool? hidden,
   }) => Post(
     id: id,
     author: author,
@@ -182,6 +186,7 @@ class Post {
     featured: featured,
     createdAt: createdAt,
     blocks: blocks,
+    hidden: hidden ?? this.hidden,
   );
 }
 

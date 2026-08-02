@@ -14,6 +14,8 @@ import '../../core/theme/app_gradients.dart';
 import '../../core/theme/app_radius.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../data/models/chat_models.dart';
+import '../../data/models/sticker_models.dart';
+import '../../data/models/user_models.dart';
 import '../live/live_provider.dart';
 import '../live/live_room_panel.dart';
 import '../shared/confirm_dialog.dart';
@@ -21,7 +23,9 @@ import '../shared/menzi_illustration_state.dart';
 import '../shared/menzo_avatar.dart';
 import '../shared/menzo_sheet.dart';
 import '../shared/menzo_toast.dart';
+import '../shared/reason_dialog.dart';
 import 'room_settings_screen.dart';
+import 'sticker_picker_sheet.dart';
 
 final roomProvider = FutureProvider.family.autoDispose(
   (ref, String roomId) => ref.watch(chatRepositoryProvider).getRoom(roomId),
@@ -169,16 +173,35 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen> {
                 previous.createdAt.day,
               ) !=
               day;
+      final isMe = message.author?.id == myId;
+      final canModerateMessages = _canModerateMessages();
       widgets.add(
         _MessageBubble(
           message: message,
-          isMe: message.author?.id == myId,
+          isMe: isMe,
           showHeader: showHeader,
           onReply: message.type == MessageType.system ? null : _setPendingReply,
+          onDelete: message.type == MessageType.system
+              ? null
+              : isMe
+                  ? (m) => _deleteMessage(m, isSelf: true)
+                  : canModerateMessages
+                      ? (m) => _deleteMessage(m, isSelf: false)
+                      : null,
         ),
       );
     }
     return widgets;
+  }
+
+  /// Staff global (CURATOR+) puede borrar el mensaje de cualquiera, pero nunca en una sala
+  /// DIRECT — ver Contexto/decisión #2 del plan (el backend lo re-verifica igual, esto es solo
+  /// para no ofrecer el botón donde de todos modos el pedido rebotaría).
+  bool _canModerateMessages() {
+    final room = ref.read(roomProvider(widget.roomId)).valueOrNull;
+    if (room == null || room.type != ChatRoomType.public) return false;
+    final role = ref.read(authProvider).profile?.globalRole;
+    return role == GlobalRole.curator || role == GlobalRole.leader || role == GlobalRole.master;
   }
 
   void _setPendingReply(ChatMessage message) {
@@ -274,6 +297,59 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen> {
 
   void _discardFailed(String localId) {
     setState(() => _pending.removeWhere((p) => p.localId == localId));
+  }
+
+  void _openStickerPicker() {
+    showStickerPickerSheet(context: context, onPick: _sendSticker);
+  }
+
+  /// Sin el camino optimista "pending" de _send/_attemptSend a propósito — un sticker no tiene
+  /// texto que reintentar mostrar, y el envío es casi instantáneo (no sube ningún archivo, ya
+  /// existe en el pack), así que no vale la pena duplicar ese estado acá.
+  Future<void> _sendSticker(Sticker sticker) async {
+    try {
+      final sent = await ref
+          .read(chatRepositoryProvider)
+          .sendMessage(widget.roomId, '', stickerId: sticker.id);
+      if (!mounted) return;
+      setState(() => _liveMessages.add(sent));
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    } catch (_) {
+      if (mounted) showMenzoToast(context, 'No pudimos enviar el sticker.');
+    }
+  }
+
+  /// El autor siempre puede borrar el suyo, sin motivo. Un no-autor necesita ser CURATOR+ global
+  /// y la sala no puede ser DIRECT (el backend re-verifica siempre, ver ChatRepository.deleteMessage)
+  /// — el llamador (_MessageBubble) solo ofrece el botón cuando ya sabemos que no va a rebotar.
+  Future<void> _deleteMessage(ChatMessage message, {required bool isSelf}) async {
+    String? reason;
+    if (isSelf) {
+      final confirmed = await showConfirmDialog(
+        context,
+        title: 'Eliminar mensaje',
+        description: 'Esta acción no se puede deshacer.',
+        confirmLabel: 'Eliminar',
+        danger: true,
+      );
+      if (!confirmed) return;
+    } else {
+      reason = await showReasonDialog(
+        context,
+        title: 'Eliminar mensaje de otro usuario',
+        description: 'El motivo queda registrado en el log de moderación, visible para el usuario maestro.',
+        confirmLabel: 'Eliminar',
+      );
+      if (reason == null) return;
+    }
+    try {
+      await ref.read(chatRepositoryProvider).deleteMessage(widget.roomId, message.id, reason: reason);
+      // Sin patch optimista local: el backend reenvía el mensaje actualizado (deleted: true) por
+      // el mismo tópico STOMP que cualquier otra mutación de sala — _mergeMessages ya lo
+      // sobrescribe por id cuando llegue.
+    } catch (_) {
+      if (mounted) showMenzoToast(context, 'No pudimos eliminar el mensaje.');
+    }
   }
 
   Future<void> _startLive(ChatRoom room) async {
@@ -571,6 +647,11 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen> {
                   padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
                   child: Row(
                     children: [
+                      IconButton(
+                        onPressed: _openStickerPicker,
+                        icon: const Text('🏷️', style: TextStyle(fontSize: 20)),
+                        tooltip: 'Enviar sticker',
+                      ),
                       Expanded(
                         child: TextField(
                           controller: _draftController,
@@ -658,24 +739,44 @@ class _MessageBubble extends StatelessWidget {
     required this.isMe,
     required this.showHeader,
     this.onReply,
+    this.onDelete,
   });
   final ChatMessage message;
   final bool isMe;
   final bool showHeader;
   /// Ausente para mensajes de sistema — ahí no tiene sentido responder.
   final ValueChanged<ChatMessage>? onReply;
+  /// Presente cuando el llamador ya decidió que este usuario puede borrar este mensaje (autor
+  /// siempre; CURATOR+ para el de otros, ver chat_room_screen.dart) — el propio botón no vuelve
+  /// a chequear permisos.
+  final ValueChanged<ChatMessage>? onDelete;
 
-  void _showReplySheet(BuildContext context) {
+  void _showActionsSheet(BuildContext context) {
     showMenzoSheet<void>(
       context: context,
       title: 'Mensaje',
-      builder: (context) => ListTile(
-        leading: const Icon(Icons.reply_outlined, color: AppColors.textPrimary),
-        title: const Text('Responder'),
-        onTap: () {
-          Navigator.of(context).maybePop();
-          onReply?.call(message);
-        },
+      builder: (context) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (onReply != null)
+            ListTile(
+              leading: const Icon(Icons.reply_outlined, color: AppColors.textPrimary),
+              title: const Text('Responder'),
+              onTap: () {
+                Navigator.of(context).maybePop();
+                onReply?.call(message);
+              },
+            ),
+          if (onDelete != null)
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: AppColors.coral),
+              title: const Text('Eliminar', style: TextStyle(color: AppColors.coral)),
+              onTap: () {
+                Navigator.of(context).maybePop();
+                onDelete?.call(message);
+              },
+            ),
+        ],
       ),
     );
   }
@@ -690,7 +791,41 @@ class _MessageBubble extends StatelessWidget {
         ),
       );
     }
-    final hasImage = message.imageUri != null && message.imageUri!.isNotEmpty;
+
+    // Sticker: sin fondo de burbuja, más grande — estilo WhatsApp/Telegram. Sigue mostrando
+    // avatar/nombre igual que cualquier otro mensaje, solo cambia el contenido central.
+    if (message.type == MessageType.sticker && message.sticker != null && !message.deleted) {
+      final stickerImage = GestureDetector(
+        onLongPress: (onReply == null && onDelete == null) ? null : () => _showActionsSheet(context),
+        child: CachedNetworkImage(imageUrl: message.sticker!.imageUrl, width: 128, height: 128, fit: BoxFit.contain),
+      );
+      if (isMe) {
+        return Align(alignment: Alignment.centerRight, child: stickerImage);
+      }
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 2),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            SizedBox(
+              width: 32,
+              child: showHeader
+                  ? MenzoAvatar(
+                      name: message.author?.displayName ?? '?',
+                      avatarUri: message.author?.avatarUri,
+                      gradient: gradientIdFromName(message.author?.avatarGradient),
+                      size: 28,
+                    )
+                  : null,
+            ),
+            const SizedBox(width: 8),
+            stickerImage,
+          ],
+        ),
+      );
+    }
+
+    final hasImage = !message.deleted && message.imageUri != null && message.imageUri!.isNotEmpty;
     final replyTo = message.replyTo;
     // Cada persona tiene su propia franja de color al costado (estilo Amino/Discord — la sala se
     // siente viva, no todo el mismo gris) derivada del mismo `avatarGradient` que ya pinta su
@@ -774,37 +909,48 @@ class _MessageBubble extends StatelessWidget {
                       ],
                     ),
             ),
-          if (hasImage)
-            ClipRRect(
-              borderRadius: BorderRadius.circular(AppRadius.md),
-              child: CachedNetworkImage(
-                imageUrl: message.imageUri!,
-                fit: BoxFit.cover,
-                width: 220,
-                placeholder: (context, url) => const SizedBox(
+          if (message.deleted)
+            Text(
+              'Mensaje eliminado',
+              style: AppTextStyles.body(
+                color: isMe ? Colors.black.withValues(alpha: 0.6) : AppColors.textMuted,
+              ).copyWith(fontStyle: FontStyle.italic),
+            )
+          else ...[
+            if (hasImage)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(AppRadius.md),
+                child: CachedNetworkImage(
+                  imageUrl: message.imageUri!,
+                  fit: BoxFit.cover,
                   width: 220,
-                  height: 160,
-                  child: Center(child: CircularProgressIndicator()),
+                  placeholder: (context, url) => const SizedBox(
+                    width: 220,
+                    height: 160,
+                    child: Center(child: CircularProgressIndicator()),
+                  ),
                 ),
               ),
-            ),
-          if (message.body.isNotEmpty)
-            Padding(
-              padding: hasImage
-                  ? const EdgeInsets.fromLTRB(8, 6, 8, 4)
-                  : EdgeInsets.zero,
-              child: Text(
-                message.body,
-                style: AppTextStyles.body(
-                  color: isMe ? Colors.black : AppColors.textPrimary,
+            if (message.body.isNotEmpty)
+              Padding(
+                padding: hasImage
+                    ? const EdgeInsets.fromLTRB(8, 6, 8, 4)
+                    : EdgeInsets.zero,
+                child: Text(
+                  message.body,
+                  style: AppTextStyles.body(
+                    color: isMe ? Colors.black : AppColors.textPrimary,
+                  ),
                 ),
               ),
-            ),
+          ],
         ],
       ),
     );
     final bubble = GestureDetector(
-      onLongPress: onReply == null ? null : () => _showReplySheet(context),
+      onLongPress: message.deleted || (onReply == null && onDelete == null)
+          ? null
+          : () => _showActionsSheet(context),
       child: bubbleContent,
     );
 

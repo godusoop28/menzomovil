@@ -7,6 +7,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_gradients.dart';
 import '../../core/theme/app_radius.dart';
 import '../../core/theme/app_text_styles.dart';
+import '../../data/models/user_models.dart';
 import 'menzo_avatar.dart';
 
 /// Clave del [Scaffold] del shell — los botones "menú" de Home/Perfil viven en el AppBar de
@@ -78,6 +79,8 @@ class MenzoDrawer extends ConsumerWidget {
       (Icons.calendar_month_outlined, 'Eventos', '/events'),
       (Icons.notifications_outlined, 'Notificaciones', '/notifications'),
       (Icons.settings_outlined, 'Configuración', '/settings'),
+      if (profile != null && profile.globalRole != GlobalRole.user)
+        (Icons.shield_outlined, 'Admin', '/admin'),
     ];
 
     void go(String path) {
