@@ -2,7 +2,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 /// Notificaciones nativas de Android disparadas por la propia app mientras sigue corriendo
 /// (foreground o en segundo plano con el proceso vivo, igual que ya sostenemos el audio de
-/// Menzi DJ/LIVE) — no es push real vía FCM: si la app está completamente cerrada o el
+/// DJ Menzi/LIVE) — no es push real vía FCM: si la app está completamente cerrada o el
 /// teléfono se reinició, no llega nada hasta que se vuelva a abrir. Ver
 /// `NotificationStreamController`, que es quien decide CUÁNDO mostrar una.
 class LocalNotifications {

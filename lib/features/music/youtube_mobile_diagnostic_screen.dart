@@ -29,7 +29,7 @@ class YouTubeMobileDiagnosticScreen extends StatefulWidget {
 }
 
 /// Video público, siempre embebible — sirve para distinguir "el WebView/origen está mal" (falla
-/// hasta con esto) de "el video específico de Menzi DJ tiene un problema propio" (esto funciona,
+/// hasta con esto) de "el video específico de DJ Menzi tiene un problema propio" (esto funciona,
 /// el otro no).
 const _publicVideoId = 'jNQXAC9IVRw';
 
@@ -266,7 +266,7 @@ class _YouTubeMobileDiagnosticScreenState
                 TextField(
                   controller: _customVideoIdController,
                   decoration: const InputDecoration(
-                    labelText: 'videoId de la canción que falló en Menzi DJ',
+                    labelText: 'videoId de la canción que falló en DJ Menzi',
                     border: OutlineInputBorder(),
                     isDense: true,
                   ),

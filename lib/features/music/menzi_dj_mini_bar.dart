@@ -13,7 +13,7 @@ import '../shared/menzi_illustration_state.dart';
 import 'menzi_dj_provider.dart';
 import 'menzi_player_display_mode.dart';
 
-/// Barra flotante minimizada de Menzi DJ — 1:1 con la parte de "mini reproductor" de
+/// Barra flotante minimizada de DJ Menzi — 1:1 con la parte de "mini reproductor" de
 /// menzoweb/components/music/MenziDjPlayerHost.tsx. Tocarla vuelve a la sala del LIVE; el
 /// panel completo de buscar/cola se abre desde el botón de música del header de esa sala.
 class MenziDjMiniBar extends ConsumerWidget {
@@ -65,7 +65,7 @@ class MenziDjMiniBar extends ConsumerWidget {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      'Toca para activar el audio de Menzi DJ',
+                      'Toca para activar el audio de DJ Menzi',
                       style: AppTextStyles.label(color: AppColors.textPrimary),
                     ),
                   ),

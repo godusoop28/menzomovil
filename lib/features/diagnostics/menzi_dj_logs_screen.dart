@@ -11,7 +11,7 @@ import '../../core/diagnostics/diagnostic_export.dart';
 
 /// Argumentos opcionales para abrir [MenziDjLogsScreen] ya filtrada — se pasan como `extra` de
 /// go_router (ver core/router/app_router.dart, ruta `/debug/menzi-dj-logs`). El botón "Ver
-/// diagnóstico" del panel de Menzi DJ (menzi_dj_panel.dart) arma uno con las categorías
+/// diagnóstico" del panel de DJ Menzi (menzi_dj_panel.dart) arma uno con las categorías
 /// relevantes al player; la entrada de Configuración → Diagnóstico no pasa ninguno (todas las
 /// categorías, sin filtrar).
 class MenziDjLogsScreenArgs {
@@ -20,13 +20,13 @@ class MenziDjLogsScreenArgs {
   final bool onlyErrors;
 }
 
-/// Pantalla de logs de Menzi DJ/LIVE — SIN depuración USB, SIN ADB, SIN computadora. Todo lo que
+/// Pantalla de logs de DJ Menzi/LIVE — SIN depuración USB, SIN ADB, SIN computadora. Todo lo que
 /// necesita para diagnosticar un dispositivo real vive en esta pantalla y en el archivo que
 /// genera "Compartir archivo" (ver diagnostic_export.dart). Accesible desde
-/// Configuración → Diagnóstico → "Logs de Menzi DJ".
+/// Configuración → Diagnóstico → "Logs de DJ Menzi".
 ///
 /// [initialCategories]/[onlyErrorsInitially] permiten abrir la pantalla ya filtrada — el botón
-/// "Ver diagnóstico" del panel de Menzi DJ la abre así, con las categorías relevantes al player
+/// "Ver diagnóstico" del panel de DJ Menzi la abre así, con las categorías relevantes al player
 /// (ver menzi_dj_panel.dart), sin que el usuario tenga que armar el filtro a mano cada vez.
 class MenziDjLogsScreen extends StatefulWidget {
   const MenziDjLogsScreen({
@@ -133,7 +133,7 @@ class _MenziDjLogsScreenState extends State<MenziDjLogsScreen> {
     final filtered = _filtered;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Logs de Menzi DJ'),
+        title: const Text('Logs de DJ Menzi'),
         actions: [
           IconButton(
             tooltip: 'Limpiar',

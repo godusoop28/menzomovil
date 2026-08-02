@@ -29,7 +29,7 @@ const _miniHeight = 122.0; // ~16:9
 /// (`Positioned > SizedBox` vs `Positioned > IgnorePointer > ClipRRect > WebViewWidget` vs
 /// `Positioned > GestureDetector > ClipRRect > Stack > ...`). Aunque las tres pasaban el MISMO
 /// `controller`, Flutter reconcilia por TIPO en la misma posición del árbol — al cambiar de rama
-/// (p. ej. abrir el panel de Menzi DJ, que llama `setDisplayMode(normal)`), el framework
+/// (p. ej. abrir el panel de DJ Menzi, que llama `setDisplayMode(normal)`), el framework
 /// desmontaba el `WebViewWidget` viejo y montaba uno nuevo, lo que fuerza a Android a
 /// destruir/recrear el `PlatformView` (la superficie nativa real del WebView) — y ESO es lo que
 /// hacía que YouTube reportara `state=2` sin que existiera ningún pause global ni local real: no

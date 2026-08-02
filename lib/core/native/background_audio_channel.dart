@@ -10,7 +10,7 @@ import 'package:flutter/services.dart';
 enum BackgroundAudioMode { listen, speak }
 
 /// Puente a [BackgroundAudioService] (Android) — mantiene el micrófono del LIVE y/o la música
-/// de Menzi DJ activos cuando la app pasa a segundo plano, vía un foreground service real con
+/// de DJ Menzi activos cuando la app pasa a segundo plano, vía un foreground service real con
 /// notificación persistente. Sin esto, Android 8+ corta el audio poco después de minimizar la
 /// app aunque los permisos estén declarados en el manifest. No-op en otras plataformas.
 class BackgroundAudioChannel {

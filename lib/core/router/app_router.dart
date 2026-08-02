@@ -89,7 +89,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/settings',
         builder: (context, state) => const SettingsScreen(),
       ),
-      // Temporal (Fase 9 de la estabilización de Menzi DJ) — aísla el reproductor de YouTube de
+      // Temporal (Fase 9 de la estabilización de DJ Menzi) — aísla el reproductor de YouTube de
       // LIVE/Agora/STOMP para poder confirmar en el dispositivo si el WebView puede reproducir
       // un video público antes de seguir tocando la sincronización. Ver
       // youtube_mobile_diagnostic_screen.dart.

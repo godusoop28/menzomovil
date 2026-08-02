@@ -33,7 +33,7 @@ String _formatDuration(int? seconds) {
 void showMenziDjPanel(BuildContext context, {required ChatRoom room}) {
   showMenzoSheet(
     context: context,
-    title: 'Menzi DJ',
+    title: 'DJ Menzi',
     subtitle: room.name,
     builder: (context) => _MenziDjPanelBody(room: room),
   );
@@ -268,7 +268,7 @@ class _MenziDjPanelBodyState extends ConsumerState<_MenziDjPanelBody> {
             child: Column(
               children: [
                 Text(
-                  'No pudimos cargar Menzi DJ. Reintentando...',
+                  'No pudimos cargar DJ Menzi. Reintentando...',
                   style: AppTextStyles.body(color: AppColors.coral),
                   textAlign: TextAlign.center,
                 ),
@@ -286,7 +286,7 @@ class _MenziDjPanelBodyState extends ConsumerState<_MenziDjPanelBody> {
         else
           const MenziIllustrationState(
             image: MenziIllustration.djHero,
-            title: 'Menzi DJ',
+            title: 'DJ Menzi',
             description: 'Busca una canción o pega un enlace para comenzar.',
             size: MenziIllustrationSize.small,
           ),
@@ -298,7 +298,7 @@ class _MenziDjPanelBodyState extends ConsumerState<_MenziDjPanelBody> {
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  'No se pudo actualizar Menzi DJ — mostrando la última info conocida.',
+                  'No se pudo actualizar DJ Menzi — mostrando la última info conocida.',
                   style: AppTextStyles.caption(),
                 ),
               ),
@@ -332,7 +332,7 @@ class _MenziDjPanelBodyState extends ConsumerState<_MenziDjPanelBody> {
                     const Icon(Icons.play_circle_outline, size: 18, color: AppColors.cyan),
                     const SizedBox(width: 8),
                     const Expanded(
-                      child: Text('Menzi DJ se pausó. Toca para continuar.'),
+                      child: Text('DJ Menzi se pausó. Toca para continuar.'),
                     ),
                   ],
                 ),
@@ -431,7 +431,7 @@ class _MenziDjPanelBodyState extends ConsumerState<_MenziDjPanelBody> {
             ],
           ],
         ),
-        // Volumen LOCAL de Menzi DJ — nunca llega al backend ni afecta a nadie más (ver
+        // Volumen LOCAL de DJ Menzi — nunca llega al backend ni afecta a nadie más (ver
         // MenziDjNotifier.setLocalVolume): cada dispositivo elige el suyo, independiente del
         // volumen de la llamada de Agora.
         if (session?.currentVideoId != null)

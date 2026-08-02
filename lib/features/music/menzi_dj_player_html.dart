@@ -68,7 +68,7 @@ int _instanceCounter = 0;
 /// auditoría de instancias (dos reproductores superpuestos vistos en dispositivo) mostró que la
 /// única forma de descartar de verdad una duplicación es que cada mensaje del bridge traiga de
 /// qué instancia viene, no asumirlo. `tag` identifica el ROL de la instancia en el log (p. ej.
-/// "global" para el player real de Menzi DJ, "diagnostic" para YouTubeMobileDiagnosticScreen) —
+/// "global" para el player real de DJ Menzi, "diagnostic" para YouTubeMobileDiagnosticScreen) —
 /// nunca dos widgets distintos deberían compartir el mismo tag+contador.
 String generatePlayerInstanceId(String tag) {
   _instanceCounter += 1;

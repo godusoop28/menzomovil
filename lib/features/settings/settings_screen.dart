@@ -105,7 +105,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
             title: const Text('Diagnóstico de YouTube'),
             subtitle: const Text(
-              'Prueba el reproductor aislado, sin LIVE ni Menzi DJ',
+              'Prueba el reproductor aislado, sin LIVE ni DJ Menzi',
             ),
             onTap: () => context.push('/debug/youtube-player'),
           ),
@@ -115,9 +115,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(14),
             ),
-            title: const Text('Logs de Menzi DJ'),
+            title: const Text('Logs de DJ Menzi'),
             subtitle: const Text(
-              'Registro interno de LIVE/Menzi DJ — sin depuración USB, exportable como TXT',
+              'Registro interno de LIVE/DJ Menzi — sin depuración USB, exportable como TXT',
             ),
             onTap: () => context.push('/debug/menzi-dj-logs'),
           ),

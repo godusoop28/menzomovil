@@ -1,6 +1,6 @@
 import '../../data/models/music_models.dart';
 
-/// Modo visual del ÚNICO WebView persistente de Menzi DJ — nunca implica crear, destruir ni
+/// Modo visual del ÚNICO WebView persistente de DJ Menzi — nunca implica crear, destruir ni
 /// intercambiar el `WebViewWidget`/`WebViewController` (ver menzi_dj_player_host.dart): solo
 /// cambia tamaño, posición y qué capa/controles se pintan encima. Reemplaza los booleanos
 /// sueltos `expanded`/`videoHidden` de antes — con dos booleanos independientes existían 4
@@ -16,7 +16,7 @@ enum MenziPlayerDisplayMode {
   /// completo no esté abierto.
   mini,
 
-  /// Panel de Menzi DJ abierto — el video se ancla cerca de la parte superior de ese panel.
+  /// Panel de DJ Menzi abierto — el video se ancla cerca de la parte superior de ese panel.
   normal,
 
   /// Igual que `normal` pero a ancho completo / más alto, para una experiencia más inmersiva

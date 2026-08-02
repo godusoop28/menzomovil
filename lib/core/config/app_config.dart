@@ -33,7 +33,7 @@ class AppConfig {
 
   static String get wsUrl => buildWebSocketUrl(apiBaseUrl);
 
-  /// Origen HTTPS real donde vive la página del reproductor de Menzi DJ (ver
+  /// Origen HTTPS real donde vive la página del reproductor de DJ Menzi (ver
   /// menziDjPlayerUrl) — el WebView carga esa página de verdad vía `loadRequest`, ya NO con
   /// `loadHtmlString`/`baseUrl` (un documento generado in-process con un origen sintético no
   /// garantiza que Android WebView mande un HTTP Referer válido en los pedidos internos que hace

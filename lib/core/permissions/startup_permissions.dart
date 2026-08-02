@@ -3,7 +3,7 @@ import 'dart:io' show Platform;
 import 'package:permission_handler/permission_handler.dart';
 
 /// Pide de entrada, apenas el usuario está adentro de la app (home), los permisos que
-/// Menzi DJ/LIVE van a necesitar de todos modos — así el primer "crear LIVE" o "unirme a un
+/// DJ Menzi/LIVE van a necesitar de todos modos — así el primer "crear LIVE" o "unirme a un
 /// LIVE" no se topa recién ahí con el diálogo del sistema (o, peor, con un micrófono que
 /// Android nunca llegó a conceder de verdad, que es justo lo que rompía el foreground service
 /// de tipo `microphone` en targetSdk 34+). El permiso de overlay (burbuja flotante) queda

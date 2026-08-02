@@ -142,7 +142,7 @@ class MenziDjState {
   /// mostrar en su lugar — antes cualquier fallo (un hipo de red, una respuesta lenta del
   /// backend, etc.) borraba `session` directo a null sin distinción, y el panel mostraba
   /// exactamente el mismo placeholder de "Busca una canción para comenzar" que el estado
-  /// genuinamente vacío — parecía que Menzi DJ "no cargaba nada" sin ninguna pista de que en
+  /// genuinamente vacío — parecía que DJ Menzi "no cargaba nada" sin ninguna pista de que en
   /// realidad había fallado una petición. Ver [MenziDjNotifier.refresh].
   final bool loadError;
 
@@ -168,7 +168,7 @@ class MenziDjState {
 
   /// true cuando la recuperación automática de una pausa inesperada (ver
   /// [MenziDjNotifier._attemptUnexpectedPauseRecovery]) agotó sus reintentos sin éxito — la UI
-  /// debe ofrecer "Menzi DJ se pausó. Toca para continuar" en vez de seguir reintentando sola.
+  /// debe ofrecer "DJ Menzi se pausó. Toca para continuar" en vez de seguir reintentando sola.
   final bool needsManualResume;
 
   /// Contador de diagnóstico (Fase 19) — cuántas veces se detectó un `state=2` sin ninguna razón
@@ -176,7 +176,7 @@ class MenziDjState {
   final int unexpectedPauseCount;
   final MenziPauseReason? lastPauseReason;
 
-  /// Rectángulo (coordenadas de pantalla) donde el panel de Menzi DJ (menzi_dj_panel.dart)
+  /// Rectángulo (coordenadas de pantalla) donde el panel de DJ Menzi (menzi_dj_panel.dart)
   /// reservó espacio para el video en modo `normal`/`cinema` — lo mide y reporta el panel mismo
   /// (ver [MenziDjNotifier.reportVideoSlotRect]) después de cada frame, así el WebView flotante
   /// (que sigue viviendo en la raíz del árbol, nunca dentro del sheet) se puede posicionar para
@@ -228,7 +228,7 @@ class MenziDjState {
   );
 }
 
-/// Menzi DJ — equivalente Flutter de menzoweb/lib/music/MenziDjContext.tsx y su versión
+/// DJ Menzi — equivalente Flutter de menzoweb/lib/music/MenziDjContext.tsx y su versión
 /// React Native (WebView). El WebView del reproductor oficial de YouTube vive montado una sola
 /// vez (ver [MenziDjMiniBar]/[MenziDjPanel]) y sobrevive a cualquier navegación. Atado al ciclo
 /// de vida de [liveProvider].activeRoomId — no tiene sentido escuchar música de un LIVE al que
@@ -237,7 +237,7 @@ class MenziDjNotifier extends Notifier<MenziDjState>
     with WidgetsBindingObserver {
   WebViewController? _controller;
 
-  /// Id de la ÚNICA instancia global de Menzi DJ que este dispositivo debería tener corriendo —
+  /// Id de la ÚNICA instancia global de DJ Menzi que este dispositivo debería tener corriendo —
   /// generado una sola vez, cuando se crea el controller (ver getter `controller`). Viaja como
   /// query param al cargar menzi-player.html y viene de vuelta en todo mensaje del bridge; si algún
   /// día algo creara una segunda instancia por error, sus mensajes llegarían con OTRO instanceId y
@@ -254,7 +254,7 @@ class MenziDjNotifier extends Notifier<MenziDjState>
   void Function(double seconds)? _pendingTimeRequest;
 
   /// true una vez que el usuario ya tocó el botón de "Habilitar audio" en esta sesión de
-  /// LIVE/Menzi DJ — a partir de acá, un `autoplayBlocked` de una canción siguiente no vuelve a
+  /// LIVE/DJ Menzi — a partir de acá, un `autoplayBlocked` de una canción siguiente no vuelve a
   /// mostrar el aviso (se reintenta play/unmute solo, en silencio); pedirlo de nuevo en cada
   /// canción sería exactamente el tipo de fricción que el pedido original marcó como prohibida.
   bool _audioGestureGranted = false;
@@ -451,7 +451,7 @@ class MenziDjNotifier extends Notifier<MenziDjState>
   }
 
   void _setup(String roomId) {
-    _log(DiagnosticCategory.live, MenziLogLevel.info, 'Menzi DJ attached to room', data: {'roomId': roomId});
+    _log(DiagnosticCategory.live, MenziLogLevel.info, 'DJ Menzi attached to room', data: {'roomId': roomId});
     final channel = StompChannel();
     _channel = channel;
     // Orden crítico: la suscripción se registra ANTES de conectar. `StompChannel.connect` manda
@@ -631,7 +631,7 @@ class MenziDjNotifier extends Notifier<MenziDjState>
     });
   }
 
-  /// Botón "Menzi DJ se pausó. Toca para continuar." (Fase 7) — solo aparece cuando la
+  /// Botón "DJ Menzi se pausó. Toca para continuar." (Fase 7) — solo aparece cuando la
   /// recuperación automática ya agotó sus reintentos.
   void resumeAfterUnexpectedPause() {
     state = state.copyWith(needsManualResume: false);
@@ -791,7 +791,7 @@ class MenziDjNotifier extends Notifier<MenziDjState>
     }
   }
 
-  /// Llamado desde un toque real del usuario sobre "Toca para activar el audio de Menzi DJ" —
+  /// Llamado desde un toque real del usuario sobre "Toca para activar el audio de DJ Menzi" —
   /// a diferencia de los comandos que manda el propio provider (play/unmute automáticos al
   /// sincronizar sesión), este SÍ nace de un gesto genuino, que es justo lo que le puede faltar
   /// al WebView/OEM para dejar sonar el audio. Se recuerda para el resto de la sesión del LIVE
