@@ -54,6 +54,63 @@ DriftAction classifyDrift(double signedDrift) {
   return DriftAction.none;
 }
 
+/// BUG CONFIRMADO CON LOGS REALES (auditoría de instancias + diagnóstico en-app, dos
+/// dispositivos): al cambiar de sala se descartaba TODO el estado previo con
+/// `state = const MenziDjState()`, incluyendo `playerReady` — pero el WebView global (ver
+/// getter `controller`) se crea y se carga UNA SOLA VEZ para toda la vida del proceso,
+/// independiente de a qué sala esté atado en cada momento, y el evento `ready` de la IFrame API
+/// solo se dispara UNA VEZ por documento cargado, nunca de nuevo al entrar a otra sala. Resetear
+/// `playerReady` acá dejaba a `_onSnapshotReceived` (el camino que sigue todo evento recibido
+/// por STOMP — el de cualquier participante que NO sea quien ejecuta la acción local de play/
+/// addToQueue/etc., que en cambio pasa por `_applySession` sin ese gate) esperando para siempre
+/// un `ready` que ya había pasado y que no iba a repetirse: el video de la sesión nunca se
+/// cargaba (nunca se mandaba `load`), y el timer de drift terminaba mandando `seek`/`getTime`
+/// sobre un YT.Player vacío cada ~15s, con YouTube devolviendo error 2 (requestedVideoId/
+/// actualVideoId ambos null) una y otra vez.
+MenziDjState resetStateForRoomChange(MenziDjState previous) =>
+    MenziDjState(playerReady: previous.playerReady);
+
+/// El timer de drift (Fase 9) NUNCA debe mandar `getTime`/`seek`/`setRate` si el video de la
+/// sesión todavía no se pidió cargar para ESTE player — sin este chequeo, un video que llegó a
+/// `state.session` pero cuyo `load` todavía no se mandó/confirmó (p. ej. justo después de un
+/// error 2 recuperable, ver [isPlayerCommandBeforeLoadError]) se trataba igual que uno
+/// reproduciendo normalmente, reintentando un seek sobre un player vacío cada 15s.
+bool shouldRunDriftCorrection({
+  required bool isBackgrounded,
+  required MusicSessionStatus? sessionStatus,
+  required DateTime? sessionSnapshotAt,
+  required String? sessionVideoId,
+  required String? loadedVideoId,
+  required int? localPlayerState,
+}) {
+  if (isBackgrounded) return false;
+  if (sessionSnapshotAt == null) return false;
+  if (sessionStatus != MusicSessionStatus.playing) return false;
+  if (localPlayerState == YtPlayerState.buffering) return false;
+  if (sessionVideoId == null || loadedVideoId != sessionVideoId) return false;
+  return true;
+}
+
+/// El error 2 ("parámetro de request inválido") de la IFrame API tiene dos causas muy distintas
+/// que NUNCA deben tratarse igual: un videoId real e inválido (`requestedVideoId` viene poblado,
+/// ver YtPlayerError) — o, como se confirmó con los logs de esta auditoría, un comando (`seek`,
+/// típicamente del timer de drift) ejecutado sobre un player al que TODAVÍA no se le mandó
+/// `loadVideoById` — en ese caso `requestedVideoId`/`actualVideoId` llegan `null` porque nunca
+/// hubo ningún video pedido. Confundir el segundo caso con "este video no se puede reproducir"
+/// (marcarlo restringido, saltar de canción) sería descartar una canción perfectamente válida por
+/// un bug de orquestación, no del video.
+bool isPlayerCommandBeforeLoadError({
+  required int errorCode,
+  required String? requestedVideoId,
+  required String? actualVideoId,
+  required String? sessionCurrentVideoId,
+}) {
+  return errorCode == 2 &&
+      requestedVideoId == null &&
+      actualVideoId == null &&
+      sessionCurrentVideoId != null;
+}
+
 /// Playback rate a aplicar para una corrección suave: atrasado (drift negativo) → acelerar;
 /// adelantado (drift positivo) → frenar.
 double softCorrectionRateFor(double signedDrift) =>
@@ -278,7 +335,9 @@ class MenziDjNotifier extends Notifier<MenziDjState>
       if (roomId == _roomId) return;
       _teardownChannel();
       _roomId = roomId;
-      state = const MenziDjState();
+      // Ver resetStateForRoomChange — `playerReady` NUNCA se resetea acá, es una propiedad del
+      // WebView global (una sola vez por proceso), no de la sala.
+      state = resetStateForRoomChange(state);
       if (roomId != null) _setup(roomId);
     });
     ref.onDispose(() {
@@ -346,17 +405,30 @@ class MenziDjNotifier extends Notifier<MenziDjState>
       // `expectedPosition` que sigue creciendo con el reloj de pared, disparando un `seek` de
       // sobra cada ~30s. Esa respuesta tardía podía además pisar el seek correcto que hace
       // `_handleAppForegrounded` justo al volver.
-      if (_isBackgrounded) return;
       final current = state.session;
-      final snapshotAt = _sessionSnapshotAt;
-      if (current == null ||
-          snapshotAt == null ||
-          current.status != MusicSessionStatus.playing ||
-          _localPlayerState == YtPlayerState.buffering)
+      if (!shouldRunDriftCorrection(
+        isBackgrounded: _isBackgrounded,
+        sessionStatus: current?.status,
+        sessionSnapshotAt: _sessionSnapshotAt,
+        sessionVideoId: current?.currentVideoId,
+        loadedVideoId: _loadedVideoId,
+        localPlayerState: _localPlayerState,
+      )) {
+        if (current != null &&
+            current.currentVideoId != null &&
+            _loadedVideoId != current.currentVideoId) {
+          _log(DiagnosticCategory.ytCommand, MenziLogLevel.warning, 'drift skipped: video not loaded', data: {
+            'desiredVideoId': current.currentVideoId,
+            'loadedVideoId': _loadedVideoId,
+            'localPlayerState': _localPlayerState,
+          });
+        }
         return;
+      }
+      final snapshotAt = _sessionSnapshotAt!;
       final elapsed =
           DateTime.now().difference(snapshotAt).inMilliseconds / 1000;
-      final expectedPosition = current.positionSeconds + elapsed;
+      final expectedPosition = current!.positionSeconds + elapsed;
       _pendingTimeRequest = (seconds) {
         // Con signo: negativo = el player va atrás del esperado, positivo = va adelante.
         final drift = seconds - expectedPosition;
@@ -488,9 +560,33 @@ class MenziDjNotifier extends Notifier<MenziDjState>
         'volume': msg['volume'],
         'currentTime': msg['currentTime'],
       });
+      final errorCode = (msg['errorCode'] as num).toInt();
+      final rawRequestedVideoId = msg['requestedVideoId'] as String?;
+      final rawActualVideoId = msg['actualVideoId'] as String?;
+      if (isPlayerCommandBeforeLoadError(
+        errorCode: errorCode,
+        requestedVideoId: rawRequestedVideoId,
+        actualVideoId: rawActualVideoId,
+        sessionCurrentVideoId: state.session?.currentVideoId,
+      )) {
+        // Ver isPlayerCommandBeforeLoadError — este NO es un video inválido/restringido, es un
+        // comando (típicamente el timer de drift, ya blindado por shouldRunDriftCorrection, pero
+        // esto cubre cualquier otro camino que quede) ejecutado sobre un player al que nunca se
+        // le mandó `load`. Nunca marcar el video como restringido ni saltar de canción acá —
+        // reintentar: limpiar `_loadedVideoId`/`_lastAppliedStatus` fuerza a
+        // `_syncPlayerToSession` a mandar `load` de nuevo en vez de asumir que ya estaba cargado.
+        _log(DiagnosticCategory.ytError, MenziLogLevel.warning, 'PLAYER_COMMAND_BEFORE_LOAD — retrying load', data: {
+          'instanceId': instanceId,
+          'sessionCurrentVideoId': state.session?.currentVideoId,
+        });
+        _loadedVideoId = null;
+        _lastAppliedStatus = null;
+        _syncPlayerToSession(state.session);
+        return;
+      }
       state = state.copyWith(
-        playerErrorCode: (msg['errorCode'] as num).toInt(),
-        playerErrorVideoId: msg['requestedVideoId'] as String? ?? _loadedVideoId,
+        playerErrorCode: errorCode,
+        playerErrorVideoId: rawRequestedVideoId ?? _loadedVideoId,
       );
     } else if (type == 'duplicatePlayerPrevented') {
       debugPrint(

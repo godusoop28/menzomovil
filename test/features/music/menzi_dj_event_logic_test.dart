@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:menzomovil/data/models/music_models.dart';
 import 'package:menzomovil/features/music/menzi_dj_player_html.dart';
 import 'package:menzomovil/features/music/menzi_dj_provider.dart';
 
@@ -145,6 +146,179 @@ void main() {
 
     test('conserva el tag como prefijo legible', () {
       expect(generatePlayerInstanceId('diagnostic'), startsWith('diagnostic-'));
+    });
+  });
+
+  group('resetStateForRoomChange — bug confirmado con logs reales (joiner sin load)', () {
+    test('preserva playerReady=true al cambiar de sala', () {
+      const previous = MenziDjState(playerReady: true, expanded: true, localVolume: 30);
+      final next = resetStateForRoomChange(previous);
+      expect(next.playerReady, isTrue);
+    });
+
+    test('preserva playerReady=false tal cual (no lo fuerza a true)', () {
+      const previous = MenziDjState(playerReady: false);
+      expect(resetStateForRoomChange(previous).playerReady, isFalse);
+    });
+
+    test('descarta el resto del estado de la sala anterior (sesión, error de player, etc.)', () {
+      const previous = MenziDjState(
+        playerReady: true,
+        playerErrorCode: 2,
+        expanded: true,
+        autoplayBlocked: true,
+      );
+      final next = resetStateForRoomChange(previous);
+      expect(next.session, isNull);
+      expect(next.playerErrorCode, isNull);
+      expect(next.expanded, isFalse);
+      expect(next.autoplayBlocked, isFalse);
+    });
+  });
+
+  group('shouldRunDriftCorrection', () {
+    test('no corre si el video de la sesión todavía no se cargó en el player', () {
+      expect(
+        shouldRunDriftCorrection(
+          isBackgrounded: false,
+          sessionStatus: MusicSessionStatus.playing,
+          sessionSnapshotAt: DateTime.now(),
+          sessionVideoId: 'wm7wx2Y6shA',
+          loadedVideoId: null,
+          localPlayerState: null,
+        ),
+        isFalse,
+      );
+    });
+
+    test('no corre si loadedVideoId es de OTRO video que el de la sesión actual', () {
+      expect(
+        shouldRunDriftCorrection(
+          isBackgrounded: false,
+          sessionStatus: MusicSessionStatus.playing,
+          sessionSnapshotAt: DateTime.now(),
+          sessionVideoId: 'wm7wx2Y6shA',
+          loadedVideoId: 'otroVideoId',
+          localPlayerState: YtPlayerState.playing,
+        ),
+        isFalse,
+      );
+    });
+
+    test('corre cuando el video coincide, está reproduciendo y no en background', () {
+      expect(
+        shouldRunDriftCorrection(
+          isBackgrounded: false,
+          sessionStatus: MusicSessionStatus.playing,
+          sessionSnapshotAt: DateTime.now(),
+          sessionVideoId: 'wm7wx2Y6shA',
+          loadedVideoId: 'wm7wx2Y6shA',
+          localPlayerState: YtPlayerState.playing,
+        ),
+        isTrue,
+      );
+    });
+
+    test('no corre en background, ni pausado, ni buffering, ni sin sessionSnapshotAt', () {
+      const base = (
+        sessionStatus: MusicSessionStatus.playing,
+        sessionVideoId: 'v1',
+        loadedVideoId: 'v1',
+      );
+      expect(
+        shouldRunDriftCorrection(
+          isBackgrounded: true,
+          sessionStatus: base.sessionStatus,
+          sessionSnapshotAt: DateTime.now(),
+          sessionVideoId: base.sessionVideoId,
+          loadedVideoId: base.loadedVideoId,
+          localPlayerState: YtPlayerState.playing,
+        ),
+        isFalse,
+      );
+      expect(
+        shouldRunDriftCorrection(
+          isBackgrounded: false,
+          sessionStatus: MusicSessionStatus.paused,
+          sessionSnapshotAt: DateTime.now(),
+          sessionVideoId: base.sessionVideoId,
+          loadedVideoId: base.loadedVideoId,
+          localPlayerState: YtPlayerState.playing,
+        ),
+        isFalse,
+      );
+      expect(
+        shouldRunDriftCorrection(
+          isBackgrounded: false,
+          sessionStatus: base.sessionStatus,
+          sessionSnapshotAt: null,
+          sessionVideoId: base.sessionVideoId,
+          loadedVideoId: base.loadedVideoId,
+          localPlayerState: YtPlayerState.playing,
+        ),
+        isFalse,
+      );
+      expect(
+        shouldRunDriftCorrection(
+          isBackgrounded: false,
+          sessionStatus: base.sessionStatus,
+          sessionSnapshotAt: DateTime.now(),
+          sessionVideoId: base.sessionVideoId,
+          loadedVideoId: base.loadedVideoId,
+          localPlayerState: YtPlayerState.buffering,
+        ),
+        isFalse,
+      );
+    });
+  });
+
+  group('isPlayerCommandBeforeLoadError — error 2 recuperable, no un video inválido', () {
+    test('clasifica error 2 con requestedVideoId/actualVideoId null y sesión con video como recuperable', () {
+      expect(
+        isPlayerCommandBeforeLoadError(
+          errorCode: 2,
+          requestedVideoId: null,
+          actualVideoId: null,
+          sessionCurrentVideoId: 'wm7wx2Y6shA',
+        ),
+        isTrue,
+      );
+    });
+
+    test('NO lo clasifica como recuperable si requestedVideoId viene poblado (video real e inválido)', () {
+      expect(
+        isPlayerCommandBeforeLoadError(
+          errorCode: 2,
+          requestedVideoId: 'algunVideoId',
+          actualVideoId: null,
+          sessionCurrentVideoId: 'algunVideoId',
+        ),
+        isFalse,
+      );
+    });
+
+    test('NO lo clasifica como recuperable para otros códigos de error', () {
+      expect(
+        isPlayerCommandBeforeLoadError(
+          errorCode: 101,
+          requestedVideoId: null,
+          actualVideoId: null,
+          sessionCurrentVideoId: 'wm7wx2Y6shA',
+        ),
+        isFalse,
+      );
+    });
+
+    test('NO lo clasifica como recuperable si no hay ninguna sesión con video actual', () {
+      expect(
+        isPlayerCommandBeforeLoadError(
+          errorCode: 2,
+          requestedVideoId: null,
+          actualVideoId: null,
+          sessionCurrentVideoId: null,
+        ),
+        isFalse,
+      );
     });
   });
 }

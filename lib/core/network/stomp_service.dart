@@ -27,9 +27,18 @@ import 'api_client.dart';
 /// ver `StompClient._connect` en el paquete), así que en vez de un `Map` nuevo por conexión se
 /// usa un único `Map` MUTABLE (`_headers`) referenciado por el `StompConfig`: `beforeConnect`
 /// pide un token fresco y lo escribe ahí adentro antes de que el cliente arme el frame CONNECT.
-class StompChannel {
-  StompChannel();
+/// Contador por proceso — cada [StompChannel] instanciado (uno por LIVE, uno por música, uno por
+/// "watch room"... ver comentario de clase) recibe un id legible distinto, para poder confirmar
+/// en los logs si dos conexiones "STOMP connected" casi simultáneas son en realidad DOS canales
+/// distintos (esperado: LIVE y música son canales separados a propósito) o de verdad el mismo
+/// canal conectándose dos veces (bug real). No se determinó cuál es el caso todavía — esto solo
+/// deja la evidencia visible en vez de asumir ninguna de las dos.
+int _channelCounter = 0;
 
+class StompChannel {
+  StompChannel() : channelId = 'stomp-${++_channelCounter}-${DateTime.now().millisecondsSinceEpoch}';
+
+  final String channelId;
   StompClient? _client;
   final Map<String, void Function(Map<String, dynamic>)> _handlers = {};
   final Map<String, StompUnsubscribe> _subs = {};
@@ -93,7 +102,7 @@ class StompChannel {
             DiagnosticCategory.stomp,
             MenziLogLevel.info,
             wasReconnect ? 'reconnected' : 'connected',
-            data: {'topics': _handlers.keys.toList()},
+            data: {'channelId': channelId, 'topics': _handlers.keys.toList()},
           );
           // Re-suscribe todo lo que ya estaba pedido antes de reconectar.
           for (final topic in _handlers.keys) {
@@ -122,6 +131,7 @@ class StompChannel {
             DiagnosticCategory.stomp,
             MenziLogLevel.warning,
             'websocket done — reconnecting',
+            data: {'channelId': channelId},
           );
           _scheduleManualReconnect();
         },
@@ -132,7 +142,7 @@ class StompChannel {
             DiagnosticCategory.stomp,
             MenziLogLevel.error,
             'websocket error',
-            data: {'error': error.toString()},
+            data: {'channelId': channelId, 'error': error.toString()},
           );
           _scheduleManualReconnect();
         },
