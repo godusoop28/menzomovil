@@ -18,7 +18,8 @@ enum DiagnosticCategory {
   ytState('YT_STATE'),
   ytError('YT_ERROR'),
   autoplay('AUTOPLAY'),
-  lifecycle('LIFECYCLE');
+  lifecycle('LIFECYCLE'),
+  agora('AGORA');
 
   const DiagnosticCategory(this.label);
   final String label;
@@ -117,7 +118,7 @@ class DiagnosticLogEntry {
   }
 }
 
-/// Registro interno en memoria de Menzi DJ/LIVE — pensado para diagnosticar en dispositivos donde
+/// Registro interno en memoria de DJ Menzi/LIVE — pensado para diagnosticar en dispositivos donde
 /// no se puede activar depuración USB (ver Fase de diagnóstico sin ADB). Guarda como máximo
 /// [maxEntries] líneas (ring buffer: la más vieja se descarta al llegar al límite) y nunca
 /// persiste a disco por sí solo — solo vive en memoria del proceso, se exporta a pedido (ver

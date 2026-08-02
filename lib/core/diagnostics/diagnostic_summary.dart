@@ -1,6 +1,6 @@
 import 'app_diagnostic_logger.dart';
 
-/// Última "foto" conocida del estado real de Menzi DJ, reconstruida escaneando los logs en orden
+/// Última "foto" conocida del estado real de DJ Menzi, reconstruida escaneando los logs en orden
 /// — no se guarda aparte en ningún provider: los logs SON la única fuente de verdad, tal como
 /// pide la Fase 6 del diagnóstico ("=== RESUMEN ===" al final del TXT exportado).
 class DiagnosticSummary {
@@ -122,6 +122,7 @@ DiagnosticSummary buildDiagnosticSummary(List<DiagnosticLogEntry> entries) {
       case DiagnosticCategory.stomp:
       case DiagnosticCategory.ytBridge:
       case DiagnosticCategory.lifecycle:
+      case DiagnosticCategory.agora:
         break;
     }
   }
@@ -274,7 +275,7 @@ List<DiagnosticFinding> detectMultipleGlobalInstances(List<DiagnosticLogEntry> e
     ];
   }
   return const [
-    DiagnosticFinding(MenziLogLevel.info, 'una sola instancia global de Menzi DJ detectada'),
+    DiagnosticFinding(MenziLogLevel.info, 'una sola instancia global de DJ Menzi detectada'),
   ];
 }
 

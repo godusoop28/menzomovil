@@ -231,6 +231,22 @@ class LiveNotifier extends Notifier<LiveState> {
 
   Future<void> join(String roomId) async {
     if (state.connecting || state.activeRoomId == roomId) return;
+    if (state.activeRoomId != null) {
+      // El guard de arriba solo cubre "ya conectando" o "ya en ESTA MISMA sala" — sin esto,
+      // entrar a un LIVE nuevo mientras ya había un canal de Agora activo en otro (p. ej. un
+      // auto-join a una sala distinta, o navegar a otro LIVE sin salir del anterior primero)
+      // creaba un SEGUNDO RtcEngine/join sin soltar el primero: `_engine` viejo se pisaba sin
+      // `leaveChannel()`/`release()` (motor duplicado, doble publicación de micrófono — la
+      // clase de bug que produce eco/delay acumulado). Salir del anterior por completo antes de
+      // unirse al nuevo.
+      AppDiagnosticLogger.instance.log(
+        DiagnosticCategory.live,
+        MenziLogLevel.warning,
+        'leaving previous room before joining a new one',
+        data: {'previousRoomId': state.activeRoomId, 'nextRoomId': roomId},
+      );
+      await leave();
+    }
     AppDiagnosticLogger.instance.log(
       DiagnosticCategory.live,
       MenziLogLevel.info,
@@ -245,6 +261,12 @@ class LiveNotifier extends Notifier<LiveState> {
       _myUid = token.uid;
 
       final engine = createAgoraRtcEngine();
+      AppDiagnosticLogger.instance.log(
+        DiagnosticCategory.agora,
+        MenziLogLevel.info,
+        'engine created',
+        data: {'roomId': roomId, 'hadPreviousEngine': _engine != null},
+      );
       await engine.initialize(
         RtcEngineContext(
           appId: token.appId,
@@ -252,7 +274,7 @@ class LiveNotifier extends Notifier<LiveState> {
           // termina, en la práctica, enrutando el audio como una llamada de voz normal —
           // Android suele poner el dispositivo en modo comunicación para eso, que puede
           // atenuar/mutear otras fuentes de audio del propio proceso mientras el motor de
-          // Agora sigue conectado (el WebView de Menzi DJ reproduce en foreground con
+          // Agora sigue conectado (el WebView de DJ Menzi reproduce en foreground con
           // webview_flutter, un pipeline de audio/video distinto al WebView nativo del
           // hand-off a segundo plano — de ahí que uno sonara y el otro no). GameStreaming es
           // el escenario que Agora documenta para "música" ("high-quality audio scenario,
@@ -270,7 +292,7 @@ class LiveNotifier extends Notifier<LiveState> {
       // Con una sola persona en la sala no se nota tanto (el que prueba se pone el teléfono en
       // la oreja); apenas hay varias, el resto no escucha nada perceptible y parece que "el bot
       // no suena" — en realidad sonaba, pero casi inaudible. Se fuerza altavoz para que tanto la
-      // llamada como Menzi DJ se escuchen a volumen normal en todos los dispositivos.
+      // llamada como DJ Menzi se escuchen a volumen normal en todos los dispositivos.
       //
       // `try/catch` a propósito: esto es una preferencia de audio, nunca debe poder tumbar la
       // conexión entera al LIVE si algún OEM/versión de Android la rechaza — antes una falla acá
@@ -328,7 +350,7 @@ class LiveNotifier extends Notifier<LiveState> {
           },
           // El token de Agora expira a la hora (TOKEN_EXPIRE_SECONDS en LiveService.getToken) —
           // sin renovarlo, cualquier LIVE que dure más que eso desconecta a todos de golpe (audio
-          // y Menzi DJ incluidos) sin ningún aviso previo. `onTokenPrivilegeWillExpire` da margen
+          // y DJ Menzi incluidos) sin ningún aviso previo. `onTokenPrivilegeWillExpire` da margen
           // para pedir uno nuevo y aplicarlo con `renewToken` ANTES de que el actual venza — sin
           // salir del canal, sin tocar mute/rol/nada más del estado del LIVE.
           onTokenPrivilegeWillExpire: (connection, token) async {
@@ -380,7 +402,7 @@ class LiveNotifier extends Notifier<LiveState> {
       // `channelProfileLiveBroadcasting` — el perfil de llamada aplica un procesamiento de voz
       // pensado para tener el teléfono pegado a la boca (de ahí el micrófono sonando bajo) y
       // compite más agresivamente por el foco de audio de Android contra la reproducción del
-      // WebView de Menzi DJ (de ahí que la música dejara de escuchársele a quien no fuera quien
+      // WebView de DJ Menzi (de ahí que la música dejara de escuchársele a quien no fuera quien
       // la controlaba). Además, `clientRoleType` (broadcaster/audience, la distinción real
       // entre quién puede hablar y quién no) solo tiene efecto real a nivel del SDK bajo este
       // perfil — bajo el de llamada era un valor sin efecto práctico.
@@ -398,6 +420,17 @@ class LiveNotifier extends Notifier<LiveState> {
         ),
       );
 
+      AppDiagnosticLogger.instance.log(
+        DiagnosticCategory.agora,
+        MenziLogLevel.info,
+        'channel joined',
+        data: {
+          'roomId': roomId,
+          'channelId': token.channelName,
+          'uid': token.uid,
+          'role': session.myRole?.name,
+        },
+      );
       state = state.copyWith(
         activeRoomId: roomId,
         session: session,
@@ -428,7 +461,7 @@ class LiveNotifier extends Notifier<LiveState> {
         await _requestMicAndPublish(initialMuted: true);
       } else {
         // Audiencia: nunca se pide RECORD_AUDIO ni se declara el tipo `microphone` del
-        // foreground service — solo `mediaPlayback`, para que Menzi DJ siga sonando en
+        // foreground service — solo `mediaPlayback`, para que DJ Menzi siga sonando en
         // segundo plano. Pedir el permiso o el tipo microphone acá sería exactamente el bug
         // que tiraba `SecurityException` (Android lo rechaza sin el permiso concedido).
         await BackgroundAudioChannel.start(
@@ -587,7 +620,7 @@ class LiveNotifier extends Notifier<LiveState> {
       clearLastMicrophoneError: true,
     );
     // Bajamos el foreground service a solo `mediaPlayback` — seguimos en el LIVE como
-    // audiencia (y Menzi DJ puede seguir sonando), pero ya no corresponde el tipo `microphone`.
+    // audiencia (y DJ Menzi puede seguir sonando), pero ya no corresponde el tipo `microphone`.
     await BackgroundAudioChannel.start(
       mode: BackgroundAudioMode.listen,
       title: 'MENZO · en vivo',
@@ -729,7 +762,7 @@ class LiveNotifier extends Notifier<LiveState> {
   /// Sin este ping periódico, el backend da por terminada la sesión sola a los 30-45s de
   /// inactividad de join/leave (ver LiveService.heartbeat) — un LIVE tranquilo (nadie entra o
   /// sale, solo se escucha) se "auto-terminaba" en silencio pasado ese lapso, y cualquier acción
-  /// posterior (buscar una canción en Menzi DJ, por ejemplo) chocaba con "no hay un LIVE activo
+  /// posterior (buscar una canción en DJ Menzi, por ejemplo) chocaba con "no hay un LIVE activo
   /// en esta sala" aunque el LIVE siguiera genuinamente en curso.
   void _startHeartbeat(String roomId) {
     _heartbeatTimer?.cancel();
@@ -861,6 +894,14 @@ class LiveNotifier extends Notifier<LiveState> {
     _liveChannel = null;
     _heartbeatTimer?.cancel();
     _heartbeatTimer = null;
+    if (_engine != null) {
+      AppDiagnosticLogger.instance.log(
+        DiagnosticCategory.agora,
+        MenziLogLevel.info,
+        'engine released',
+        data: {'roomId': state.activeRoomId},
+      );
+    }
     try {
       await _engine?.leaveChannel();
       await _engine?.release();
