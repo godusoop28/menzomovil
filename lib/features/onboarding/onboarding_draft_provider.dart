@@ -58,4 +58,4 @@ final onboardingDraftProvider =
       OnboardingDraftNotifier.new,
     );
 
-const onboardingSteps = ['name', 'aura', 'avatar', 'interests', 'confirm'];
+const onboardingSteps = ['name', 'avatar', 'interests', 'confirm'];

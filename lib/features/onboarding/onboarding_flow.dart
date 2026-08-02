@@ -16,15 +16,13 @@ import '../shared/menzo_image_background.dart';
 import '../shared/menzo_toast.dart';
 import 'onboarding_draft_provider.dart';
 
-final aurasProvider = FutureProvider(
-  (ref) => ref.watch(userRepositoryProvider).auras(),
-);
 final interestsProvider = FutureProvider(
   (ref) => ref.watch(userRepositoryProvider).interests(),
 );
 
-/// Wizard de 5 pasos (nombre → aura → avatar → intereses → confirmar) — 1:1 con
-/// menzoweb/app/onboarding/*.
+/// Wizard de 4 pasos (nombre → avatar → intereses → confirmar) — 1:1 con
+/// menzoweb/app/onboarding/*. El aura ya no se elige manualmente (paso removido, ver
+/// OnboardingDraft.aura) — siempre queda en su default ('fuego', seed real en la DB).
 class OnboardingFlowScreen extends ConsumerWidget {
   const OnboardingFlowScreen({super.key, required this.step});
   final String step;
@@ -72,10 +70,6 @@ class OnboardingFlowScreen extends ConsumerWidget {
                   child: switch (step) {
                     'name' => _NameStep(
                       onNext: () => _goToStep(context, _index + 1),
-                    ),
-                    'aura' => _AuraStep(
-                      onNext: () => _goToStep(context, _index + 1),
-                      onBack: () => _goToStep(context, _index - 1),
                     ),
                     'avatar' => _AvatarStep(
                       onNext: () => _goToStep(context, _index + 1),
@@ -143,91 +137,6 @@ class _NameStepState extends ConsumerState<_NameStep> {
             ref.read(onboardingDraftProvider.notifier).setDisplayName(trimmed);
             widget.onNext();
           },
-        ),
-      ],
-    );
-  }
-}
-
-class _AuraStep extends ConsumerWidget {
-  const _AuraStep({required this.onNext, required this.onBack});
-  final VoidCallback onNext;
-  final VoidCallback onBack;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final auras = ref.watch(aurasProvider);
-    final selected = ref.watch(onboardingDraftProvider).aura;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text('Elegí tu aura', style: AppTextStyles.h1()),
-        const SizedBox(height: 8),
-        Text(
-          'Define el color y el estilo que te va a acompañar en Menzo.',
-          style: AppTextStyles.body(color: AppColors.textSecondary),
-        ),
-        const SizedBox(height: 24),
-        Expanded(
-          child: auras.when(
-            data: (options) => GridView.builder(
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                mainAxisSpacing: 12,
-                crossAxisSpacing: 12,
-                childAspectRatio: 1.6,
-              ),
-              itemCount: options.length,
-              itemBuilder: (context, i) {
-                final option = options[i];
-                final active = option.id == selected;
-                final gradientId = gradientIdFromName(option.gradient);
-                return GestureDetector(
-                  onTap: () => ref
-                      .read(onboardingDraftProvider.notifier)
-                      .setAura(option.id),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      gradient: AppGradients.linear(gradientId),
-                      borderRadius: BorderRadius.circular(AppRadius.lg),
-                      border: active
-                          ? Border.all(color: Colors.white, width: 2)
-                          : null,
-                    ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      option.label,
-                      style: AppTextStyles.label(color: AppColors.textOnAccent),
-                    ),
-                  ),
-                );
-              },
-            ),
-            loading: () => const Center(child: CircularProgressIndicator()),
-            error: (e, st) => Text(
-              'No pudimos cargar las auras.',
-              style: AppTextStyles.body(color: AppColors.coral),
-            ),
-          ),
-        ),
-        Row(
-          children: [
-            Expanded(
-              child: OutlinedButton(
-                onPressed: onBack,
-                child: const Text('Atrás'),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              flex: 2,
-              child: GradientButton(
-                label: 'Continuar',
-                size: GradientButtonSize.lg,
-                onPressed: onNext,
-              ),
-            ),
-          ],
         ),
       ],
     );
