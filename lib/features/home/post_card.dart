@@ -88,11 +88,9 @@ class _PostCardState extends ConsumerState<PostCard> {
   @override
   Widget build(BuildContext context) {
     final post = _post;
-    // Preview compacto para la tarjeta, no el post completo — `post.body` ya es un excerpt de
-    // solo texto derivado server-side de `blocks` (ver PostService.deriveBodyFromBlocks en el
-    // backend), así que sigue sirviendo tal cual acá. La portada usa la primera imagen/gif de los
-    // bloques si no hay `imageUri` legacy — el resto de los bloques solo se ven al entrar al post
-    // (ver PostBlockRenderer en post_detail_screen.dart).
+    // La portada usa la primera imagen/gif de los bloques si no hay `imageUri` legacy — el resto
+    // de los bloques solo se ven al entrar al post (ver PostBlockRenderer en
+    // post_detail_screen.dart).
     final coverImage =
         post.imageUri ??
         post.blocks
@@ -101,124 +99,313 @@ class _PostCardState extends ConsumerState<PostCard> {
               orElse: () => const PostBlock(id: '', type: PostBlockType.divider),
             )
             .url;
+
+    if (widget.fullContent) {
+      return _FullPostCard(
+        post: post,
+        coverImage: coverImage,
+        voting: _voting,
+        onVote: _vote,
+        onToggleLike: _toggleLike,
+        onToggleBookmark: _toggleBookmark,
+      );
+    }
+    return _CompactPostCard(
+      post: post,
+      coverImage: coverImage,
+      voting: _voting,
+      onVote: _vote,
+      onToggleLike: _toggleLike,
+      onToggleBookmark: _toggleBookmark,
+    );
+  }
+}
+
+/// Tarjeta estilo revista del feed — 1:1 con la versión web rediseñada de PostCard.tsx: portada
+/// a sangre completa (foto real, o un panel de color plano cuando no hay ninguna) con
+/// título/tipo superpuestos sobre un degradado oscuro, en vez de la tarjeta plana de antes.
+class _CompactPostCard extends StatelessWidget {
+  const _CompactPostCard({
+    required this.post,
+    required this.coverImage,
+    required this.voting,
+    required this.onVote,
+    required this.onToggleLike,
+    required this.onToggleBookmark,
+  });
+
+  final Post post;
+  final String? coverImage;
+  final bool voting;
+  final ValueChanged<String> onVote;
+  final VoidCallback onToggleLike;
+  final VoidCallback onToggleBookmark;
+
+  @override
+  Widget build(BuildContext context) {
+    final gradientId = gradientIdFromName(post.gradient);
     return GestureDetector(
-      onTap: widget.fullContent ? null : () => context.push('/post/${post.id}'),
+      onTap: () => context.push('/post/${post.id}'),
       child: Container(
-        padding: const EdgeInsets.all(14),
+        clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
           color: AppColors.surfaceSecondary,
-          borderRadius: BorderRadius.circular(AppRadius.lg),
+          borderRadius: BorderRadius.circular(AppRadius.xl),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                MenzoAvatar(
-                  name: post.author.displayName,
-                  avatarUri: post.author.avatarUri,
-                  size: 32,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    post.author.displayName,
-                    style: AppTextStyles.label(),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            if (post.title != null)
-              Text(post.title!, style: AppTextStyles.h3()),
-            if (widget.fullContent && post.blocks.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: PostBlockRenderer(blocks: post.blocks),
-              )
-            else
-              Text(
-                post.body,
-                style: AppTextStyles.body(color: AppColors.textSecondary),
-                maxLines: widget.fullContent ? null : 4,
-                overflow: widget.fullContent ? TextOverflow.visible : TextOverflow.ellipsis,
-              ),
-            if (post.type == PostType.poll && post.pollOptions.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              _PollOptions(
-                options: post.pollOptions,
-                disabled: _voting,
-                onVote: _vote,
-              ),
-            ] else if (!(widget.fullContent && post.blocks.isNotEmpty) && coverImage != null) ...[
-              const SizedBox(height: 10),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(AppRadius.md),
-                child: CachedNetworkImage(
-                  imageUrl: coverImage,
-                  height: widget.fullContent ? null : 180,
-                  width: double.infinity,
-                  fit: BoxFit.cover,
-                ),
-              ),
-            ] else if (!(widget.fullContent && post.blocks.isNotEmpty) && coverImage == null)
-              Container(
-                margin: const EdgeInsets.only(top: 10),
-                height: 6,
-                decoration: BoxDecoration(
-                  gradient: AppGradients.linear(
-                    gradientIdFromName(post.gradient),
-                  ),
-                  borderRadius: BorderRadius.circular(3),
-                ),
-              ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                GestureDetector(
-                  onTap: _toggleLike,
-                  child: Row(
-                    children: [
-                      Icon(
-                        post.likedByMe ? Icons.favorite : Icons.favorite_border,
-                        size: 18,
-                        color: post.likedByMe
-                            ? AppColors.coral
-                            : AppColors.textMuted,
+            SizedBox(
+              height: 180,
+              width: double.infinity,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (coverImage != null)
+                    CachedNetworkImage(imageUrl: coverImage!, fit: BoxFit.cover)
+                  else
+                    DecoratedBox(
+                      decoration: BoxDecoration(gradient: AppGradients.linear(gradientId)),
+                    ),
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.transparent,
+                          Colors.black.withValues(alpha: 0.15),
+                          Colors.black.withValues(alpha: 0.85),
+                        ],
                       ),
-                      const SizedBox(width: 4),
-                      Text('${post.likeCount}', style: AppTextStyles.caption()),
+                    ),
+                  ),
+                  Positioned(
+                    left: 14,
+                    right: 14,
+                    bottom: 12,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (post.type != PostType.text)
+                          Container(
+                            margin: const EdgeInsets.only(bottom: 6),
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.16),
+                              borderRadius: BorderRadius.circular(AppRadius.pill),
+                            ),
+                            child: Text(
+                              _typeLabel(post.type),
+                              style: AppTextStyles.caption(color: Colors.white).copyWith(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.4,
+                              ),
+                            ),
+                          ),
+                        if (post.title != null)
+                          Text(
+                            post.title!,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTextStyles.h3(
+                              color: Colors.white,
+                            ).copyWith(fontWeight: FontWeight.bold),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      MenzoAvatar(
+                        name: post.author.displayName,
+                        avatarUri: post.author.avatarUri,
+                        gradient: gradientIdFromName(post.author.avatarGradient),
+                        size: 30,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          post.author.displayName,
+                          style: AppTextStyles.label(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
                     ],
                   ),
-                ),
-                const SizedBox(width: 16),
-                const Icon(
-                  Icons.mode_comment_outlined,
-                  size: 17,
-                  color: AppColors.textMuted,
-                ),
-                const SizedBox(width: 4),
-                Text('${post.commentCount}', style: AppTextStyles.caption()),
-                const Spacer(),
-                GestureDetector(
-                  onTap: _toggleBookmark,
-                  child: Icon(
-                    post.bookmarkedByMe
-                        ? Icons.bookmark
-                        : Icons.bookmark_border,
-                    size: 18,
-                    color: post.bookmarkedByMe
-                        ? AppColors.orange
-                        : AppColors.textMuted,
+                  const SizedBox(height: 8),
+                  Text(
+                    post.body,
+                    style: AppTextStyles.body(color: AppColors.textSecondary),
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                ),
-              ],
+                  if (post.type == PostType.poll && post.pollOptions.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    _PollOptions(options: post.pollOptions, disabled: voting, onVote: onVote),
+                  ],
+                  const SizedBox(height: 10),
+                  _PostActionsRow(
+                    post: post,
+                    onToggleLike: onToggleLike,
+                    onToggleBookmark: onToggleBookmark,
+                  ),
+                ],
+              ),
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Vista de detalle — sin el header de portada a sangre completa (acá se lee el post entero, no
+/// se está hojeando el feed), pero con el mismo tratamiento de bloques/acciones.
+class _FullPostCard extends StatelessWidget {
+  const _FullPostCard({
+    required this.post,
+    required this.coverImage,
+    required this.voting,
+    required this.onVote,
+    required this.onToggleLike,
+    required this.onToggleBookmark,
+  });
+
+  final Post post;
+  final String? coverImage;
+  final bool voting;
+  final ValueChanged<String> onVote;
+  final VoidCallback onToggleLike;
+  final VoidCallback onToggleBookmark;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasBlocks = post.blocks.isNotEmpty;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceSecondary,
+        borderRadius: BorderRadius.circular(AppRadius.xl),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              MenzoAvatar(
+                name: post.author.displayName,
+                avatarUri: post.author.avatarUri,
+                gradient: gradientIdFromName(post.author.avatarGradient),
+                size: 34,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  post.author.displayName,
+                  style: AppTextStyles.label(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (post.title != null) Text(post.title!, style: AppTextStyles.h3()),
+          if (hasBlocks)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: PostBlockRenderer(blocks: post.blocks),
+            )
+          else
+            Text(
+              post.body,
+              style: AppTextStyles.body(color: AppColors.textSecondary),
+            ),
+          if (post.type == PostType.poll && post.pollOptions.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            _PollOptions(options: post.pollOptions, disabled: voting, onVote: onVote),
+          ] else if (!hasBlocks && coverImage != null) ...[
+            const SizedBox(height: 10),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              child: CachedNetworkImage(
+                imageUrl: coverImage!,
+                width: double.infinity,
+                fit: BoxFit.cover,
+              ),
+            ),
+          ],
+          const SizedBox(height: 10),
+          _PostActionsRow(post: post, onToggleLike: onToggleLike, onToggleBookmark: onToggleBookmark),
+        ],
+      ),
+    );
+  }
+}
+
+String _typeLabel(PostType type) => switch (type) {
+  PostType.image => 'Imagen',
+  PostType.poll => 'Encuesta',
+  PostType.question => 'Pregunta',
+  PostType.event => 'Evento',
+  PostType.text => '',
+};
+
+class _PostActionsRow extends StatelessWidget {
+  const _PostActionsRow({
+    required this.post,
+    required this.onToggleLike,
+    required this.onToggleBookmark,
+  });
+
+  final Post post;
+  final VoidCallback onToggleLike;
+  final VoidCallback onToggleBookmark;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        GestureDetector(
+          onTap: onToggleLike,
+          child: Row(
+            children: [
+              Icon(
+                post.likedByMe ? Icons.favorite : Icons.favorite_border,
+                size: 18,
+                color: post.likedByMe ? AppColors.coral : AppColors.textMuted,
+              ),
+              const SizedBox(width: 4),
+              Text('${post.likeCount}', style: AppTextStyles.caption()),
+            ],
+          ),
+        ),
+        const SizedBox(width: 16),
+        const Icon(Icons.mode_comment_outlined, size: 17, color: AppColors.textMuted),
+        const SizedBox(width: 4),
+        Text('${post.commentCount}', style: AppTextStyles.caption()),
+        const Spacer(),
+        GestureDetector(
+          onTap: onToggleBookmark,
+          child: Icon(
+            post.bookmarkedByMe ? Icons.bookmark : Icons.bookmark_border,
+            size: 18,
+            color: post.bookmarkedByMe ? AppColors.orange : AppColors.textMuted,
+          ),
+        ),
+      ],
     );
   }
 }

@@ -27,22 +27,39 @@ class ChatRoomTile extends StatelessWidget {
         ? (room.peer?.displayName ?? 'Conversación')
         : (room.name ?? '');
     final avatarUri = isDirect ? room.peer?.avatarUri : room.avatarUri;
+    // Cada fila tiene su propia "personalidad de color" (estilo comunidad de Amino) en vez de ser
+    // todas el mismo gris plano — el wash es deliberadamente sutil (baja opacidad) para no pisar
+    // la legibilidad del texto. Para DMs se usa el gradient de la otra persona, no uno de sala.
+    final tintId = gradientIdFromName(
+      isDirect ? room.peer?.avatarGradient : room.gradient,
+    );
+    final tintColors = AppGradients.colors(
+      tintId,
+    ).map((c) => c.withValues(alpha: 0.13)).toList();
 
     return Material(
       color: AppColors.surfaceSecondary,
-      borderRadius: BorderRadius.circular(AppRadius.lg),
+      borderRadius: BorderRadius.circular(AppRadius.xl),
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
-        borderRadius: BorderRadius.circular(AppRadius.lg),
+        borderRadius: BorderRadius.circular(AppRadius.xl),
         onTap: () => context.push('/chat/${room.id}'),
-        child: Padding(
-          padding: const EdgeInsets.all(10),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: tintColors,
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+          padding: const EdgeInsets.all(12),
           child: Row(
             children: [
               MenzoAvatar(
                 name: title,
                 avatarUri: avatarUri,
-                gradient: gradientIdFromName(room.gradient),
-                size: 46,
+                gradient: tintId,
+                size: 52,
                 showOnline: isDirect,
                 online: room.peer?.isOnline ?? false,
               ),
@@ -57,7 +74,9 @@ class ChatRoomTile extends StatelessWidget {
                         Expanded(
                           child: Text(
                             title,
-                            style: AppTextStyles.label(),
+                            style: AppTextStyles.label().copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),

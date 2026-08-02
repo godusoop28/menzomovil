@@ -692,6 +692,13 @@ class _MessageBubble extends StatelessWidget {
     }
     final hasImage = message.imageUri != null && message.imageUri!.isNotEmpty;
     final replyTo = message.replyTo;
+    // Cada persona tiene su propia franja de color al costado (estilo Amino/Discord — la sala se
+    // siente viva, no todo el mismo gris) derivada del mismo `avatarGradient` que ya pinta su
+    // avatar. La opacidad de fondo baja un poco (antes 100%) para que el fondo de la sala (si
+    // tiene foto propia, ver room.backgroundUri) siga siendo legible detrás de los mensajes.
+    final authorAccent = !isMe
+        ? AppGradients.colors(gradientIdFromName(message.author?.avatarGradient)).first
+        : null;
     final bubbleContent = Container(
       margin: const EdgeInsets.only(bottom: 2),
       padding: hasImage
@@ -701,8 +708,13 @@ class _MessageBubble extends StatelessWidget {
         maxWidth: MediaQuery.of(context).size.width * 0.72,
       ),
       decoration: BoxDecoration(
-        color: isMe ? AppColors.orange : AppColors.surfaceSecondary,
-        borderRadius: BorderRadius.circular(AppRadius.lg),
+        color: isMe
+            ? AppColors.orange
+            : AppColors.surfaceSecondary.withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(22),
+        border: authorAccent != null
+            ? Border(left: BorderSide(color: authorAccent, width: 3))
+            : null,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
