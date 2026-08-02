@@ -354,6 +354,9 @@ class _MenziDjPanelBodyState extends ConsumerState<_MenziDjPanelBody> {
                       ? Icons.pause
                       : Icons.play_arrow,
                 ),
+                tooltip: session!.status == MusicSessionStatus.playing
+                    ? 'Pausar'
+                    : 'Reproducir',
                 style: IconButton.styleFrom(
                   backgroundColor: AppColors.orange,
                   foregroundColor: Colors.black,
@@ -362,6 +365,7 @@ class _MenziDjPanelBodyState extends ConsumerState<_MenziDjPanelBody> {
               IconButton(
                 onPressed: () => ref.read(menziDjProvider.notifier).skip(),
                 icon: const Icon(Icons.skip_next),
+                tooltip: 'Siguiente canción',
                 style: IconButton.styleFrom(
                   backgroundColor: AppColors.surfaceSecondary,
                 ),
@@ -369,6 +373,7 @@ class _MenziDjPanelBodyState extends ConsumerState<_MenziDjPanelBody> {
               IconButton(
                 onPressed: () => ref.read(menziDjProvider.notifier).stopMusic(),
                 icon: const Icon(Icons.stop),
+                tooltip: 'Detener música',
                 style: IconButton.styleFrom(
                   backgroundColor: AppColors.coral.withValues(alpha: 0.15),
                   foregroundColor: AppColors.coral,
@@ -379,6 +384,7 @@ class _MenziDjPanelBodyState extends ConsumerState<_MenziDjPanelBody> {
               onPressed: () =>
                   ref.read(menziDjProvider.notifier).toggleLocalMute(),
               icon: Icon(music.localMuted ? Icons.volume_off : Icons.volume_up),
+              tooltip: music.localMuted ? 'Activar música' : 'Silenciar música',
               style: IconButton.styleFrom(
                 backgroundColor: AppColors.surfaceSecondary,
               ),

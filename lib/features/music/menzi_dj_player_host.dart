@@ -155,6 +155,7 @@ class _MenziDjPlayerHostState extends ConsumerState<MenziDjPlayerHost> {
                   top: 8,
                   child: SafeArea(
                     child: IconButton(
+                      tooltip: 'Salir de pantalla completa',
                       onPressed: () => ref
                           .read(menziDjProvider.notifier)
                           .setDisplayMode(MenziPlayerDisplayMode.normal),

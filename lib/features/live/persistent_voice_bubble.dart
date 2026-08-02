@@ -27,6 +27,8 @@ class MenzoFloatingBubble extends StatefulWidget {
     required this.initialPositionFraction,
     required this.onHiddenChanged,
     required this.onPositionChanged,
+    required this.semanticLabel,
+    this.restoreSemanticLabel = 'Mostrar burbuja',
   });
 
   final Widget child;
@@ -34,6 +36,12 @@ class MenzoFloatingBubble extends StatefulWidget {
   final VoidCallback? onDoubleTap;
   final VoidCallback? onLongPress;
   final bool initialHidden;
+
+  /// Descripción para lectores de pantalla del contenido/estado actual de la burbuja (p.ej.
+  /// "LIVE de voz activo, micrófono silenciado") — el llamador conoce ese contexto, este widget
+  /// genérico no. Anunciada también como hint de long-press cuando corresponde.
+  final String semanticLabel;
+  final String restoreSemanticLabel;
 
   /// Fracción (0.0-1.0) de la esquina superior-izquierda dentro del área de arrastre disponible
   /// — `null` si no hay una posición guardada todavía (usa una esquina por defecto).
@@ -87,22 +95,26 @@ class _MenzoFloatingBubbleState extends State<MenzoFloatingBubble> {
                     left: _snappedRight ? const Radius.circular(12) : Radius.zero,
                     right: _snappedRight ? Radius.zero : const Radius.circular(12),
                   ),
-                  child: Container(
-                    width: _handleWidth,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: AppColors.surfaceElevated,
-                      border: Border.all(color: AppColors.borderStrong),
-                      borderRadius: BorderRadius.horizontal(
-                        left: _snappedRight ? const Radius.circular(12) : Radius.zero,
-                        right: _snappedRight ? Radius.zero : const Radius.circular(12),
+                  child: Semantics(
+                    button: true,
+                    label: widget.restoreSemanticLabel,
+                    child: Container(
+                      width: _handleWidth,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceElevated,
+                        border: Border.all(color: AppColors.borderStrong),
+                        borderRadius: BorderRadius.horizontal(
+                          left: _snappedRight ? const Radius.circular(12) : Radius.zero,
+                          right: _snappedRight ? Radius.zero : const Radius.circular(12),
+                        ),
                       ),
-                    ),
-                    alignment: Alignment.center,
-                    child: Icon(
-                      _snappedRight ? Icons.chevron_left : Icons.chevron_right,
-                      size: 16,
-                      color: AppColors.textMuted,
+                      alignment: Alignment.center,
+                      child: Icon(
+                        _snappedRight ? Icons.chevron_left : Icons.chevron_right,
+                        size: 16,
+                        color: AppColors.textMuted,
+                      ),
                     ),
                   ),
                 ),
@@ -113,32 +125,37 @@ class _MenzoFloatingBubbleState extends State<MenzoFloatingBubble> {
           return Positioned(
             left: position.dx,
             top: position.dy,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: widget.onTap,
-              onDoubleTap: widget.onDoubleTap,
-              onLongPress: widget.onLongPress,
-              onPanUpdate: (details) {
-                final next = position + details.delta;
-                setState(() {
-                  _positionFraction = Offset(
-                    maxLeft == 0 ? 0 : (next.dx.clamp(0.0, maxLeft)) / maxLeft,
-                    maxTop == 0 ? 0 : (next.dy.clamp(0.0, maxTop)) / maxTop,
-                  );
-                });
-              },
-              onPanEnd: (_) {
-                // Snap al borde más cercano — se siente intencional en vez de quedar flotando a
-                // mitad de pantalla, y deja el resto del contenido despejado.
-                final current = _positionFraction ?? fraction;
-                final snapToRight = current.dx > 0.5;
-                setState(() {
-                  _snappedRight = snapToRight;
-                  _positionFraction = Offset(snapToRight ? 1.0 : 0.0, current.dy);
-                });
-                widget.onPositionChanged(_positionFraction!);
-              },
-              child: widget.child,
+            child: Semantics(
+              button: true,
+              label: widget.semanticLabel,
+              hint: widget.onLongPress != null ? 'Mantén presionado para ver más opciones' : null,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: widget.onTap,
+                onDoubleTap: widget.onDoubleTap,
+                onLongPress: widget.onLongPress,
+                onPanUpdate: (details) {
+                  final next = position + details.delta;
+                  setState(() {
+                    _positionFraction = Offset(
+                      maxLeft == 0 ? 0 : (next.dx.clamp(0.0, maxLeft)) / maxLeft,
+                      maxTop == 0 ? 0 : (next.dy.clamp(0.0, maxTop)) / maxTop,
+                    );
+                  });
+                },
+                onPanEnd: (_) {
+                  // Snap al borde más cercano — se siente intencional en vez de quedar flotando a
+                  // mitad de pantalla, y deja el resto del contenido despejado.
+                  final current = _positionFraction ?? fraction;
+                  final snapToRight = current.dx > 0.5;
+                  setState(() {
+                    _snappedRight = snapToRight;
+                    _positionFraction = Offset(snapToRight ? 1.0 : 0.0, current.dy);
+                  });
+                  widget.onPositionChanged(_positionFraction!);
+                },
+                child: widget.child,
+              ),
             ),
           );
         },
@@ -274,6 +291,9 @@ class _PersistentVoiceBubbleState extends ConsumerState<PersistentVoiceBubble> {
       onPositionChanged: _setPositionFraction,
       onTap: () => ref.read(appRouterProvider).push('/chat/${live.activeRoomId}'),
       onLongPress: () => _showActions(context, live),
+      semanticLabel:
+          'LIVE de voz en curso, ${micLooksOff ? 'micrófono silenciado' : 'micrófono activo'}. Toca para volver.',
+      restoreSemanticLabel: 'Mostrar burbuja del LIVE de voz',
       child: _BubbleFace(voiceActive: voiceActive, micLooksOff: micLooksOff),
     );
   }

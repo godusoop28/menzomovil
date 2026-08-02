@@ -46,7 +46,11 @@ class _DjMenziOrbState extends State<DjMenziOrb> with SingleTickerProviderStateM
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return Semantics(
+      button: true,
+      excludeSemantics: true,
+      label: widget.title != null ? 'Abrir DJ Menzi: ${widget.title}' : 'Abrir DJ Menzi',
+      child: GestureDetector(
       onTap: widget.onTap,
       behavior: HitTestBehavior.opaque,
       child: Column(
@@ -98,6 +102,7 @@ class _DjMenziOrbState extends State<DjMenziOrb> with SingleTickerProviderStateM
             ),
           ],
         ],
+      ),
       ),
     );
   }
