@@ -38,6 +38,10 @@ class LiveState {
     this.participants = const [],
     this.speakingLevels = const {},
     this.speakingRequests = const [],
+    this.screenSharing = false,
+    this.screenShareChanging = false,
+    this.lastScreenShareError,
+    this.agoraChannelName,
   });
 
   final String? watchedRoomId;
@@ -62,6 +66,12 @@ class LiveState {
   final List<LiveParticipant> participants;
   final Map<String, double> speakingLevels;
   final List<LiveParticipant> speakingRequests;
+  final bool screenSharing;
+  final bool screenShareChanging;
+  final String? lastScreenShareError;
+  /// Necesario para construir `RtcConnection`/`VideoViewController.remote` al renderizar la
+  /// pantalla compartida de otra persona — ver _ScreenShareSurface en live_room_panel.dart.
+  final String? agoraChannelName;
 
   bool get canSpeak => _speakingRoles.contains(myRole);
   bool get canModerate =>
@@ -92,6 +102,11 @@ class LiveState {
     List<LiveParticipant>? participants,
     Map<String, double>? speakingLevels,
     List<LiveParticipant>? speakingRequests,
+    bool? screenSharing,
+    bool? screenShareChanging,
+    String? lastScreenShareError,
+    bool clearLastScreenShareError = false,
+    String? agoraChannelName,
   }) => LiveState(
     watchedRoomId: clearWatchedRoomId
         ? null
@@ -119,6 +134,12 @@ class LiveState {
     participants: participants ?? this.participants,
     speakingLevels: speakingLevels ?? this.speakingLevels,
     speakingRequests: speakingRequests ?? this.speakingRequests,
+    screenSharing: screenSharing ?? this.screenSharing,
+    screenShareChanging: screenShareChanging ?? this.screenShareChanging,
+    lastScreenShareError: clearLastScreenShareError
+        ? null
+        : (lastScreenShareError ?? this.lastScreenShareError),
+    agoraChannelName: agoraChannelName ?? this.agoraChannelName,
   );
 }
 
@@ -135,6 +156,11 @@ class LiveState {
 /// una nueva publicación.
 class LiveNotifier extends Notifier<LiveState> {
   RtcEngine? _engine;
+
+  /// Motor real de Agora — expuesto solo para que la UI (ver _ScreenShareSurface en
+  /// live_room_panel.dart) pueda construir un `VideoViewController` para renderizar la pantalla
+  /// compartida de otra persona. `null` mientras no hay una conexión activa.
+  RtcEngine? get engine => _engine;
   StompChannel? _liveChannel;
   StompChannel? _watchChannel;
   Timer? _heartbeatTimer;
@@ -328,6 +354,35 @@ class LiveNotifier extends Notifier<LiveState> {
               );
             }
           },
+          // El SDK maneja el diálogo de consentimiento de MediaProjection por su cuenta (ver
+          // startScreenShare — no hay ningún MethodChannel propio para esto) y avisa acá si el
+          // usuario lo rechazó (PermissionType.screenCapture, "Android only" según la propia
+          // documentación del SDK) — sin este callback, rechazar el permiso del sistema dejaba el
+          // botón de compartir pantalla marcado como "activo" para siempre, sin ninguna captura
+          // real corriendo detrás.
+          onPermissionError: (permissionType) {
+            if (permissionType == PermissionType.screenCapture &&
+                state.screenSharing) {
+              stopScreenShare(
+                notifyBackend: true,
+                errorMessage: 'No pudimos compartir tu pantalla: permiso denegado.',
+              );
+            }
+          },
+          // Misma lógica que onLocalAudioStateChanged, para el track de pantalla — si Agora
+          // reporta que la captura falló de verdad después de haber arrancado (no solo el
+          // permiso denegado, que ya cubre onPermissionError), el estado local se corrige solo.
+          onLocalVideoStateChanged:
+              (source, localVideoState, error) {
+                if (source != VideoSourceType.videoSourceScreen) return;
+                if (localVideoState ==
+                    LocalVideoStreamState.localVideoStreamStateFailed) {
+                  stopScreenShare(
+                    notifyBackend: true,
+                    errorMessage: 'Se perdió la captura de tu pantalla.',
+                  );
+                }
+              },
           // El SDK de Agora ya reintenta reconectar solo ante cortes de red (hasta 20 min) —
           // acá solo reflejamos ese estado en la UI, para que "sin audio unos segundos" se vea
           // como "reconectando" en vez de parecer que el LIVE se rompió sin explicación.
@@ -437,6 +492,7 @@ class LiveNotifier extends Notifier<LiveState> {
         connected: true,
         connecting: false,
         myRole: session.myRole,
+        agoraChannelName: token.channelName,
       );
       AppDiagnosticLogger.instance.log(
         DiagnosticCategory.live,
@@ -581,6 +637,102 @@ class LiveNotifier extends Notifier<LiveState> {
       );
     } finally {
       state = state.copyWith(microphoneChanging: false);
+    }
+  }
+
+  /// Autoservicio, gateado a HOST/CO_HOST (el backend vuelve a validar esto — ver
+  /// LiveService.setScreenSharing, incluida la parte de "solo uno a la vez"). El SDK de Agora
+  /// maneja el diálogo de consentimiento de MediaProjection de Android por su cuenta al llamar
+  /// `startScreenCapture` (confirmado leyendo el ejemplo oficial del paquete instalado — no hay
+  /// ningún MethodChannel/ActivityResultLauncher propio acá, sería código muerto): el resultado
+  /// llega por `onPermissionError`/`onLocalVideoStateChanged`, ver el event handler más arriba.
+  /// `publishScreenCaptureVideo`/`publishScreenCaptureAudio` (no `publishScreenTrack`, que es
+  /// solo Windows/macOS) es lo que efectivamente publica en ESTA misma conexión/uid, igual que
+  /// `publishMicrophoneTrack` hace para el audio — no hace falta un segundo join.
+  Future<void> startScreenShare() async {
+    final engine = _engine;
+    final roomId = state.activeRoomId;
+    if (engine == null || roomId == null || state.screenSharing) return;
+    state = state.copyWith(
+      screenShareChanging: true,
+      clearLastScreenShareError: true,
+    );
+    try {
+      await engine.enableVideo();
+      await engine.startScreenCapture(
+        const ScreenCaptureParameters2(captureAudio: true, captureVideo: true),
+      );
+      await engine.updateChannelMediaOptions(
+        const ChannelMediaOptions(
+          publishScreenCaptureVideo: true,
+          publishScreenCaptureAudio: true,
+        ),
+      );
+      state = state.copyWith(screenSharing: true);
+      await ref
+          .read(liveRepositoryProvider)
+          .setScreenSharing(roomId, true)
+          .catchError((_) {});
+    } catch (e) {
+      try {
+        await engine.stopScreenCapture();
+      } catch (_) {}
+      state = state.copyWith(
+        screenSharing: false,
+        lastScreenShareError: 'No pudimos compartir tu pantalla.',
+      );
+    } finally {
+      state = state.copyWith(screenShareChanging: false);
+    }
+  }
+
+  /// `notifyBackend: false` es solo para el caso "el backend ya lo sabe" (me cortaron desde
+  /// otro lado, ver el manejo de CHAT_LIVE_SCREEN_SHARE_STOPPED en _subscribeLiveEvents) —
+  /// avisarle de nuevo sería redundante y podría pisar el estado de quien tomó el control.
+  Future<void> stopScreenShare({
+    bool notifyBackend = true,
+    String? errorMessage,
+  }) async {
+    final engine = _engine;
+    final roomId = state.activeRoomId;
+    if (engine != null) {
+      try {
+        await engine.updateChannelMediaOptions(
+          const ChannelMediaOptions(
+            publishScreenCaptureVideo: false,
+            publishScreenCaptureAudio: false,
+          ),
+        );
+        await engine.stopScreenCapture();
+      } catch (_) {}
+    }
+    state = state.copyWith(
+      screenSharing: false,
+      lastScreenShareError: errorMessage,
+      clearLastScreenShareError: errorMessage == null,
+    );
+    if (notifyBackend && roomId != null) {
+      await ref
+          .read(liveRepositoryProvider)
+          .setScreenSharing(roomId, false)
+          .catchError((_) {});
+    }
+  }
+
+  /// Traduce el UUID real (el que usa todo el resto de la app) al uid entero interno que Agora
+  /// le asigna a esa cuenta dentro del canal — `joinChannelWithUserAccount` usa el esquema de
+  /// "User Account" de Agora, así que cada callback/video canvas de bajo nivel del SDK habla en
+  /// términos de ese entero efímero, nunca del UUID. `getUserInfoByUserAccount` es la forma
+  /// documentada de resolverlo bajo demanda, sin tener que mantener un mapa propio poblado desde
+  /// onUserJoined.
+  Future<int?> resolveScreenSharerUid(String userAccount) async {
+    final engine = _engine;
+    if (engine == null) return null;
+    try {
+      final info = await engine.getUserInfoByUserAccount(userAccount);
+      return info.uid;
+    } catch (_) {
+      return null;
     }
   }
 
@@ -820,6 +972,12 @@ class LiveNotifier extends Notifier<LiveState> {
               (type == 'CHAT_LIVE_PARTICIPANT_DEMOTED' ||
                   type == 'CHAT_LIVE_SPEAKING_REJECTED')) {
             becomeAudience();
+          } else if (isMe &&
+              type == 'CHAT_LIVE_SCREEN_SHARE_STOPPED' &&
+              state.screenSharing) {
+            // El backend ya decidió esto (otro host/co-host tomó el control) — solo la
+            // limpieza local, avisarle de nuevo sería redundante.
+            stopScreenShare(notifyBackend: false);
           } else if (type == 'CHAT_LIVE_ANNOUNCEMENT_UPDATED') {
             final announcement = payload['payload'] is Map<String, dynamic>
                 ? (payload['payload'] as Map<String, dynamic>)['announcement']
@@ -903,6 +1061,7 @@ class LiveNotifier extends Notifier<LiveState> {
       );
     }
     try {
+      if (state.screenSharing) await _engine?.stopScreenCapture();
       await _engine?.leaveChannel();
       await _engine?.release();
     } catch (_) {}

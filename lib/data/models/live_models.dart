@@ -76,6 +76,7 @@ class LiveParticipant {
     required this.user,
     required this.role,
     required this.microphoneEnabled,
+    required this.screenSharing,
     required this.requestedToSpeakAt,
     required this.joinedAt,
     this.speakingLevel = 0,
@@ -84,6 +85,7 @@ class LiveParticipant {
   final UserSummary? user;
   final LiveParticipantRole role;
   final bool microphoneEnabled;
+  final bool screenSharing;
   final DateTime? requestedToSpeakAt;
   final DateTime joinedAt;
 
@@ -97,6 +99,7 @@ class LiveParticipant {
             : null,
         role: liveRoleFromJson(json['role'] as String),
         microphoneEnabled: json['microphoneEnabled'] as bool? ?? false,
+        screenSharing: json['screenSharing'] as bool? ?? false,
         requestedToSpeakAt: json['requestedToSpeakAt'] != null
             ? DateTime.parse(json['requestedToSpeakAt'] as String).toLocal()
             : null,
@@ -107,6 +110,7 @@ class LiveParticipant {
     user: user,
     role: role,
     microphoneEnabled: microphoneEnabled,
+    screenSharing: screenSharing,
     requestedToSpeakAt: requestedToSpeakAt,
     joinedAt: joinedAt,
     speakingLevel: level,

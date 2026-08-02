@@ -5,6 +5,13 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
+    <!-- Compartir pantalla en LIVE (ver LiveNotifier.startScreenShare) — el propio SDK de Agora
+         maneja el diálogo de consentimiento de MediaProjection y, según su documentación, corre
+         su propio foreground service internamente al iniciar la captura; no hay una clase de
+         servicio propia en esta app para esto (a diferencia de BackgroundAudioService/
+         LiveBubbleService) — MediaProjection en Android 14+ exige que el permiso esté declarado
+         a nivel de la app igual, sin importar quién sea el dueño real del foreground service. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
     <!-- Evita que Doze/App Standby pause los timers del WebView de Menzi DJ o el pipeline de

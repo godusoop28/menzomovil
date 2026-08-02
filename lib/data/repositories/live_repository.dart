@@ -75,6 +75,12 @@ class LiveRepository {
     body: {'enabled': enabled},
   );
 
+  Future<void> setScreenSharing(String roomId, bool enabled) =>
+      _client.post<void>(
+        '/api/chat/rooms/$roomId/live/screen-share',
+        body: {'enabled': enabled},
+      );
+
   Future<void> requestToSpeak(String roomId) =>
       _client.post<void>('/api/chat/rooms/$roomId/live/speaking-requests');
   Future<void> cancelSpeakRequest(String roomId) => _client.post<void>(

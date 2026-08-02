@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -215,6 +216,18 @@ class _LiveRoomPanelState extends ConsumerState<LiveRoomPanel> {
                       ],
                     ),
                   ),
+                Builder(
+                  builder: (context) {
+                    final sharing = live.participants.where(
+                      (p) => p.screenSharing && p.user != null,
+                    );
+                    if (sharing.isEmpty) return const SizedBox.shrink();
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: _ScreenShareSurface(presenterId: sharing.first.user!.id),
+                    );
+                  },
+                ),
                 if (music.hasTrack)
                   Padding(
                     padding: const EdgeInsets.only(top: 12),
@@ -355,6 +368,85 @@ class _LiveTimerState extends State<_LiveTimer> {
     return Text(
       label,
       style: AppTextStyles.caption(color: AppColors.textMuted),
+    );
+  }
+}
+
+/// Superficie de video para quien está compartiendo pantalla — sigue mostrando el resto del
+/// escenario/audiencia debajo, no es un modo de pantalla completa aparte (mismo criterio que la
+/// versión web, ver ScreenShareSurface en menzoweb/components/live/LiveRoomPanel.tsx). El uid
+/// entero que pide `VideoViewController.remote` se resuelve bajo demanda (ver
+/// LiveNotifier.resolveScreenSharerUid) porque el resto de la app solo conoce el UUID real de
+/// cada persona, nunca el uid interno que Agora le asigna en el canal.
+class _ScreenShareSurface extends ConsumerStatefulWidget {
+  const _ScreenShareSurface({required this.presenterId});
+  final String presenterId;
+
+  @override
+  ConsumerState<_ScreenShareSurface> createState() => _ScreenShareSurfaceState();
+}
+
+class _ScreenShareSurfaceState extends ConsumerState<_ScreenShareSurface> {
+  int? _resolvedUid;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolve();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ScreenShareSurface oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.presenterId != widget.presenterId) {
+      setState(() => _resolvedUid = null);
+      _resolve();
+    }
+  }
+
+  Future<void> _resolve() async {
+    final uid = await ref
+        .read(liveProvider.notifier)
+        .resolveScreenSharerUid(widget.presenterId);
+    if (mounted) setState(() => _resolvedUid = uid);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final engine = ref.read(liveProvider.notifier).engine;
+    final channelName = ref.watch(liveProvider).agoraChannelName;
+    final uid = _resolvedUid;
+
+    return AspectRatio(
+      aspectRatio: 16 / 9,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Colors.black,
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          child: engine == null || channelName == null || uid == null
+              ? const Center(
+                  child: SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                )
+              : AgoraVideoView(
+                  controller: VideoViewController.remote(
+                    rtcEngine: engine,
+                    canvas: VideoCanvas(
+                      uid: uid,
+                      sourceType: VideoSourceType.videoSourceScreen,
+                      renderMode: RenderModeType.renderModeFit,
+                    ),
+                    connection: RtcConnection(channelId: channelName),
+                  ),
+                ),
+        ),
+      ),
     );
   }
 }
@@ -513,6 +605,17 @@ class _LiveControls extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final live = ref.watch(liveProvider);
     final micLooksOff = live.muted || !live.localAudioPublished;
+    final myId = ref.watch(authProvider).profile?.id;
+    final someoneElseSharing = live.participants.any(
+      (p) => p.screenSharing && p.user?.id != myId,
+    );
+
+    ref.listen<LiveState>(liveProvider, (previous, next) {
+      if (next.lastScreenShareError != null &&
+          next.lastScreenShareError != previous?.lastScreenShareError) {
+        showMenzoToast(context, next.lastScreenShareError!);
+      }
+    });
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
@@ -594,6 +697,35 @@ class _LiveControls extends ConsumerWidget {
                   ),
                   child: const Text('Solicitud enviada · Cancelar'),
                 ),
+              if (live.canModerate) ...[
+                const SizedBox(width: 12),
+                IconButton(
+                  iconSize: 26,
+                  tooltip: live.screenSharing
+                      ? 'Dejar de compartir pantalla'
+                      : someoneElseSharing
+                          ? 'Alguien más está compartiendo pantalla'
+                          : 'Compartir pantalla',
+                  onPressed: live.screenShareChanging ||
+                          (!live.screenSharing && someoneElseSharing)
+                      ? null
+                      : () => live.screenSharing
+                          ? ref.read(liveProvider.notifier).stopScreenShare()
+                          : ref.read(liveProvider.notifier).startScreenShare(),
+                  icon: Icon(
+                    Icons.screen_share_outlined,
+                    color: live.screenSharing
+                        ? AppColors.cyan
+                        : AppColors.textPrimary,
+                  ),
+                  style: IconButton.styleFrom(
+                    backgroundColor: live.screenSharing
+                        ? AppColors.cyan.withValues(alpha: 0.15)
+                        : AppColors.surfaceSecondary,
+                    padding: const EdgeInsets.all(14),
+                  ),
+                ),
+              ],
               const SizedBox(width: 12),
               IconButton(
                 iconSize: 26,
