@@ -11,6 +11,7 @@ import '../../data/models/live_models.dart';
 import '../live/live_provider.dart';
 import '../shared/menzi_illustration_state.dart';
 import 'menzi_dj_provider.dart';
+import 'menzi_player_display_mode.dart';
 
 /// Barra flotante minimizada de Menzi DJ — 1:1 con la parte de "mini reproductor" de
 /// menzoweb/components/music/MenziDjPlayerHost.tsx. Tocarla vuelve a la sala del LIVE; el
@@ -76,7 +77,10 @@ class MenziDjMiniBar extends ConsumerWidget {
       );
     }
 
-    if (music.expanded || hiddenHere) {
+    final isCollapsedMode =
+        music.displayMode == MenziPlayerDisplayMode.mini ||
+        music.displayMode == MenziPlayerDisplayMode.hidden;
+    if (!isCollapsedMode || hiddenHere) {
       return const SizedBox.shrink();
     }
 
@@ -95,7 +99,9 @@ class MenziDjMiniBar extends ConsumerWidget {
           borderRadius: BorderRadius.circular(AppRadius.pill),
           onTap: () {
             ref.read(appRouterProvider).push('/chat/${live.activeRoomId}');
-            ref.read(menziDjProvider.notifier).setExpanded(true);
+            ref
+                .read(menziDjProvider.notifier)
+                .setDisplayMode(MenziPlayerDisplayMode.normal);
           },
           child: Container(
             padding: const EdgeInsets.all(6),

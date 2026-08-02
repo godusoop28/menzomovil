@@ -18,6 +18,7 @@ import '../../core/theme/app_radius.dart';
 import '../../core/theme/app_text_styles.dart';
 import 'menzi_dj_player_html.dart';
 import 'menzi_dj_provider.dart';
+import 'menzi_player_display_mode.dart';
 
 enum _Tab { search, queue, requests, history }
 
@@ -86,34 +87,83 @@ String _playerDiagnosticStatusLabel(_PlayerDiagnosticStatus status) => switch (s
 class _MenziDjPanelBodyState extends ConsumerState<_MenziDjPanelBody> {
   _Tab _tab = _Tab.search;
   bool _diagnosticOverlayOpen = false;
+  final _videoSlotKey = GlobalKey();
 
   @override
   void initState() {
     super.initState();
     Future.microtask(
-      () => ref.read(menziDjProvider.notifier).setExpanded(true),
+      () => ref
+          .read(menziDjProvider.notifier)
+          .setDisplayMode(MenziPlayerDisplayMode.normal),
     );
   }
 
   @override
   void dispose() {
-    ref.read(menziDjProvider.notifier).setExpanded(false);
+    final notifier = ref.read(menziDjProvider.notifier);
+    // Nunca deja un modo "normal/cine" con nadie midiendo su hueco — sin esto, el WebView
+    // quedaría posicionado en el último rect conocido (que ya no existe, el panel se cerró) en
+    // vez de volver a la burbuja mini. Si estaba en fullscreen, MenziDjPlayerHost es quien
+    // restaura el modo inmersivo del sistema (ver su propio `ref.listen`), no hace falta acá.
+    notifier.setDisplayMode(MenziPlayerDisplayMode.mini);
+    notifier.reportVideoSlotRect(null);
     super.dispose();
   }
 
   bool get _canModerate =>
       widget.room.role == RoomRole.owner || widget.room.role == RoomRole.coHost;
 
+  void _setMode(MenziPlayerDisplayMode mode) =>
+      ref.read(menziDjProvider.notifier).setDisplayMode(mode);
+
+  /// El WebView del video sigue viviendo en la raíz del árbol (ver menzi_dj_player_host.dart),
+  /// nunca dentro de este sheet — este placeholder solo RESERVA el espacio dentro del contenido
+  /// scrolleable del panel (para que el resto de los controles nunca quede tapado) y reporta,
+  /// después de cada frame, dónde está en coordenadas de pantalla, para que el WebView flotante
+  /// se pueda posicionar ahí (ver [MenziDjNotifier.reportVideoSlotRect]).
+  void _reportVideoSlotRect() {
+    final mode = ref.read(menziDjProvider).displayMode;
+    final notifier = ref.read(menziDjProvider.notifier);
+    if (mode != MenziPlayerDisplayMode.normal && mode != MenziPlayerDisplayMode.cinema) {
+      notifier.reportVideoSlotRect(null);
+      return;
+    }
+    final renderObject = _videoSlotKey.currentContext?.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.attached) return;
+    final topLeft = renderObject.localToGlobal(Offset.zero);
+    notifier.reportVideoSlotRect(
+      Rect.fromLTWH(topLeft.dx, topLeft.dy, renderObject.size.width, renderObject.size.height),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final music = ref.watch(menziDjProvider);
     final session = music.session;
     final diagnosticStatus = _playerDiagnosticStatusOf(music);
+    final mode = music.displayMode;
+    final showsVideoSlot =
+        session?.currentVideoId != null &&
+        (mode == MenziPlayerDisplayMode.normal || mode == MenziPlayerDisplayMode.cinema);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _reportVideoSlotRect();
+    });
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
+        if (showsVideoSlot) ...[
+          AspectRatio(
+            key: _videoSlotKey,
+            aspectRatio: 16 / 9,
+            child: const DecoratedBox(
+              decoration: BoxDecoration(color: Colors.black),
+            ),
+          ),
+          const SizedBox(height: 10),
+        ],
         // Fase de diagnóstico sin ADB/logcat — mientras exista, este indicador + acceso rápido
         // conviven acá. `_diagnosticOverlayOpen` inserta un bloque MÁS dentro de este mismo
         // Column (nunca un Stack/Positioned encima de los controles reales), así por
@@ -262,6 +312,34 @@ class _MenziDjPanelBodyState extends ConsumerState<_MenziDjPanelBody> {
             canModerate: _canModerate,
           ),
         ],
+        if (music.needsManualResume) ...[
+          const SizedBox(height: 10),
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              onTap: () =>
+                  ref.read(menziDjProvider.notifier).resumeAfterUnexpectedPause(),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.cyan.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                  border: Border.all(color: AppColors.cyan.withValues(alpha: 0.35)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.play_circle_outline, size: 18, color: AppColors.cyan),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text('Menzi DJ se pausó. Toca para continuar.'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
         const SizedBox(height: 12),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -305,23 +383,52 @@ class _MenziDjPanelBodyState extends ConsumerState<_MenziDjPanelBody> {
                 backgroundColor: AppColors.surfaceSecondary,
               ),
             ),
-            if (session?.currentVideoId != null)
+            if (session?.currentVideoId != null) ...[
               IconButton(
-                onPressed: () => ref
-                    .read(menziDjProvider.notifier)
-                    .setVideoHidden(!music.videoHidden),
+                onPressed: () => _setMode(
+                  mode == MenziPlayerDisplayMode.hidden
+                      ? MenziPlayerDisplayMode.normal
+                      : MenziPlayerDisplayMode.hidden,
+                ),
                 icon: Icon(
-                  music.videoHidden
+                  mode == MenziPlayerDisplayMode.hidden
                       ? Icons.videocam_off
                       : Icons.videocam_outlined,
                 ),
-                tooltip: music.videoHidden
-                    ? 'Mostrar video flotante'
-                    : 'Ocultar video flotante',
+                tooltip: mode == MenziPlayerDisplayMode.hidden
+                    ? 'Mostrar video'
+                    : 'Ocultar video',
                 style: IconButton.styleFrom(
                   backgroundColor: AppColors.surfaceSecondary,
                 ),
               ),
+              IconButton(
+                onPressed: () => _setMode(
+                  mode == MenziPlayerDisplayMode.cinema
+                      ? MenziPlayerDisplayMode.normal
+                      : MenziPlayerDisplayMode.cinema,
+                ),
+                icon: Icon(
+                  mode == MenziPlayerDisplayMode.cinema
+                      ? Icons.crop_landscape
+                      : Icons.theaters_outlined,
+                ),
+                tooltip: mode == MenziPlayerDisplayMode.cinema
+                    ? 'Salir de modo cine'
+                    : 'Modo cine',
+                style: IconButton.styleFrom(
+                  backgroundColor: AppColors.surfaceSecondary,
+                ),
+              ),
+              IconButton(
+                onPressed: () => _setMode(MenziPlayerDisplayMode.fullscreen),
+                icon: const Icon(Icons.fullscreen),
+                tooltip: 'Pantalla completa',
+                style: IconButton.styleFrom(
+                  backgroundColor: AppColors.surfaceSecondary,
+                ),
+              ),
+            ],
           ],
         ),
         // Volumen LOCAL de Menzi DJ — nunca llega al backend ni afecta a nadie más (ver
@@ -340,9 +447,19 @@ class _MenziDjPanelBodyState extends ConsumerState<_MenziDjPanelBody> {
                   value: music.localVolume.toDouble(),
                   min: 0,
                   max: 100,
+                  // Fase 8: cada tick de `onChanged` (decenas por segundo durante un arrastre)
+                  // pasa por MenziDjNotifier.setLocalVolume, que internamente decide si manda el
+                  // comando ahora o lo descarta (throttle ~80ms, ver shouldSendThrottledVolume)
+                  // — el valor local/UI siempre se actualiza igual, solo el comando al bridge se
+                  // limita. `onChangeEnd` SIEMPRE manda el valor final, sin pasar por el
+                  // throttle, para no perder el último valor si cayó justo en una ventana
+                  // descartada.
                   onChanged: (value) => ref
                       .read(menziDjProvider.notifier)
                       .setLocalVolume(value.round()),
+                  onChangeEnd: (value) => ref
+                      .read(menziDjProvider.notifier)
+                      .setLocalVolume(value.round(), bypassThrottleForFinalValue: true),
                 ),
               ),
               const Icon(Icons.volume_up, size: 18, color: AppColors.textMuted),
