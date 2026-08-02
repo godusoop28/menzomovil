@@ -19,6 +19,7 @@ import '../live/live_room_panel.dart';
 import '../shared/confirm_dialog.dart';
 import '../shared/menzi_illustration_state.dart';
 import '../shared/menzo_avatar.dart';
+import '../shared/menzo_sheet.dart';
 import '../shared/menzo_toast.dart';
 import 'room_settings_screen.dart';
 
@@ -49,6 +50,7 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen> {
   final Map<String, String> _typingUsers = {};
   final Map<String, Timer> _typingExpiry = {};
   DateTime _lastTypingPublish = DateTime.fromMillisecondsSinceEpoch(0);
+  MessageReplyPreview? _pendingReplyTo;
 
   @override
   void initState() {
@@ -172,10 +174,24 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen> {
           message: message,
           isMe: message.author?.id == myId,
           showHeader: showHeader,
+          onReply: message.type == MessageType.system ? null : _setPendingReply,
         ),
       );
     }
     return widgets;
+  }
+
+  void _setPendingReply(ChatMessage message) {
+    setState(
+      () => _pendingReplyTo = MessageReplyPreview(
+        id: message.id,
+        authorName: message.author?.displayName ?? 'Miembro',
+        bodyPreview: message.imageUri != null && message.body.isEmpty
+            ? 'Imagen'
+            : message.body,
+        deleted: false,
+      ),
+    );
   }
 
   void _scrollToBottom() {
@@ -197,24 +213,35 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen> {
     if (text.isEmpty) return;
     _draftController.clear();
     final localId = 'local-${_localIdSeq++}';
-    setState(
-      () => _pending.add(
+    final replyToMessageId = _pendingReplyTo?.id;
+    setState(() {
+      _pending.add(
         _PendingMessage(
           localId: localId,
           body: text,
           status: _SendStatus.sending,
+          replyToMessageId: replyToMessageId,
         ),
-      ),
-    );
+      );
+      _pendingReplyTo = null;
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
-    await _attemptSend(localId, text);
+    await _attemptSend(localId, text, replyToMessageId);
   }
 
-  Future<void> _attemptSend(String localId, String text) async {
+  Future<void> _attemptSend(
+    String localId,
+    String text,
+    String? replyToMessageId,
+  ) async {
     try {
       final sent = await ref
           .read(chatRepositoryProvider)
-          .sendMessage(widget.roomId, text);
+          .sendMessage(
+            widget.roomId,
+            text,
+            replyToMessageId: replyToMessageId,
+          );
       if (!mounted) return;
       setState(() {
         _pending.removeWhere((p) => p.localId == localId);
@@ -238,10 +265,11 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen> {
     final idx = _pending.indexWhere((p) => p.localId == localId);
     if (idx == -1) return;
     final text = _pending[idx].body;
+    final replyToMessageId = _pending[idx].replyToMessageId;
     setState(
       () => _pending[idx] = _pending[idx].copyWith(status: _SendStatus.sending),
     );
-    _attemptSend(localId, text);
+    _attemptSend(localId, text, replyToMessageId);
   }
 
   void _discardFailed(String localId) {
@@ -483,6 +511,60 @@ class _ChatRoomScreenState extends ConsumerState<ChatRoomScreen> {
                     ),
                   ),
                 ),
+              if (_pendingReplyTo != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceSecondary,
+                      borderRadius: BorderRadius.circular(AppRadius.sm),
+                      border: const Border(
+                        left: BorderSide(color: AppColors.cyan, width: 2),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'Respondiendo a ${_pendingReplyTo!.authorName}',
+                                style: AppTextStyles.caption(
+                                  color: AppColors.cyan,
+                                ).copyWith(fontWeight: FontWeight.bold),
+                              ),
+                              Text(
+                                _pendingReplyTo!.bodyPreview ?? '',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppTextStyles.caption(
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () =>
+                              setState(() => _pendingReplyTo = null),
+                          icon: const Icon(Icons.close, size: 16),
+                          tooltip: 'Cancelar respuesta',
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                            minWidth: 28,
+                            minHeight: 28,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               SafeArea(
                 top: false,
                 child: Padding(
@@ -575,10 +657,28 @@ class _MessageBubble extends StatelessWidget {
     required this.message,
     required this.isMe,
     required this.showHeader,
+    this.onReply,
   });
   final ChatMessage message;
   final bool isMe;
   final bool showHeader;
+  /// Ausente para mensajes de sistema — ahí no tiene sentido responder.
+  final ValueChanged<ChatMessage>? onReply;
+
+  void _showReplySheet(BuildContext context) {
+    showMenzoSheet<void>(
+      context: context,
+      title: 'Mensaje',
+      builder: (context) => ListTile(
+        leading: const Icon(Icons.reply_outlined, color: AppColors.textPrimary),
+        title: const Text('Responder'),
+        onTap: () {
+          Navigator.of(context).maybePop();
+          onReply?.call(message);
+        },
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -591,7 +691,8 @@ class _MessageBubble extends StatelessWidget {
       );
     }
     final hasImage = message.imageUri != null && message.imageUri!.isNotEmpty;
-    final bubble = Container(
+    final replyTo = message.replyTo;
+    final bubbleContent = Container(
       margin: const EdgeInsets.only(bottom: 2),
       padding: hasImage
           ? const EdgeInsets.all(4)
@@ -614,6 +715,52 @@ class _MessageBubble extends StatelessWidget {
                 message.author?.displayName ?? '',
                 style: AppTextStyles.caption(color: AppColors.cyan),
               ),
+            ),
+          if (replyTo != null)
+            Container(
+              margin: const EdgeInsets.only(bottom: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(AppRadius.sm),
+                border: Border(
+                  left: BorderSide(
+                    color: isMe ? Colors.black45 : AppColors.cyan,
+                    width: 2,
+                  ),
+                ),
+              ),
+              child: replyTo.deleted
+                  ? Text(
+                      'Mensaje eliminado',
+                      style: AppTextStyles.caption(
+                        color: isMe
+                            ? Colors.black.withValues(alpha: 0.6)
+                            : AppColors.textMuted,
+                      ).copyWith(fontStyle: FontStyle.italic),
+                    )
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          replyTo.authorName ?? '',
+                          style: AppTextStyles.caption(
+                            color: isMe ? Colors.black87 : AppColors.cyan,
+                          ).copyWith(fontWeight: FontWeight.bold),
+                        ),
+                        Text(
+                          replyTo.bodyPreview ?? '',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTextStyles.caption(
+                            color: isMe
+                                ? Colors.black.withValues(alpha: 0.7)
+                                : AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
             ),
           if (hasImage)
             ClipRRect(
@@ -643,6 +790,10 @@ class _MessageBubble extends StatelessWidget {
             ),
         ],
       ),
+    );
+    final bubble = GestureDetector(
+      onLongPress: onReply == null ? null : () => _showReplySheet(context),
+      child: bubbleContent,
     );
 
     if (isMe) {
@@ -681,15 +832,18 @@ class _PendingMessage {
     required this.localId,
     required this.body,
     required this.status,
+    this.replyToMessageId,
   });
   final String localId;
   final String body;
   final _SendStatus status;
+  final String? replyToMessageId;
 
   _PendingMessage copyWith({_SendStatus? status}) => _PendingMessage(
     localId: localId,
     body: body,
     status: status ?? this.status,
+    replyToMessageId: replyToMessageId,
   );
 }
 

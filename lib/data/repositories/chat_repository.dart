@@ -68,10 +68,15 @@ class ChatRepository {
     String roomId,
     String body, {
     String? imageUri,
+    String? replyToMessageId,
   }) async => ChatMessage.fromJson(
     await _client.post<Map<String, dynamic>>(
       '/api/chat/rooms/$roomId/messages',
-      body: {'body': body, 'imageUri': imageUri},
+      body: {
+        'body': body,
+        'imageUri': imageUri,
+        'replyToMessageId': replyToMessageId,
+      },
     ),
   );
 

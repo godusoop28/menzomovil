@@ -198,6 +198,28 @@ class RoomBan {
 
 enum MessageType { text, system }
 
+class MessageReplyPreview {
+  const MessageReplyPreview({
+    required this.id,
+    required this.authorName,
+    required this.bodyPreview,
+    required this.deleted,
+  });
+
+  final String id;
+  final String? authorName;
+  final String? bodyPreview;
+  final bool deleted;
+
+  factory MessageReplyPreview.fromJson(Map<String, dynamic> json) =>
+      MessageReplyPreview(
+        id: json['id'] as String,
+        authorName: json['authorName'] as String?,
+        bodyPreview: json['bodyPreview'] as String?,
+        deleted: json['deleted'] as bool? ?? false,
+      );
+}
+
 class ChatMessage {
   const ChatMessage({
     required this.id,
@@ -207,6 +229,7 @@ class ChatMessage {
     required this.imageUri,
     required this.type,
     required this.createdAt,
+    required this.replyTo,
   });
 
   final String id;
@@ -216,6 +239,7 @@ class ChatMessage {
   final String? imageUri;
   final MessageType type;
   final DateTime createdAt;
+  final MessageReplyPreview? replyTo;
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) => ChatMessage(
     id: json['id'] as String,
@@ -227,6 +251,9 @@ class ChatMessage {
     imageUri: json['imageUri'] as String?,
     type: json['type'] == 'system' ? MessageType.system : MessageType.text,
     createdAt: parseInstant(json['createdAt'] as String),
+    replyTo: json['replyTo'] != null
+        ? MessageReplyPreview.fromJson(json['replyTo'] as Map<String, dynamic>)
+        : null,
   );
 }
 
