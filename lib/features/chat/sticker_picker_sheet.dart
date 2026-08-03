@@ -3,9 +3,11 @@ import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/providers/repository_providers.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_radius.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../data/models/sticker_models.dart';
 import '../shared/menzo_sheet.dart';
@@ -75,6 +77,11 @@ class _StickerPickerBodyState extends ConsumerState<_StickerPickerBody> {
     }
   }
 
+  void _createPack() {
+    Navigator.of(context).maybePop();
+    context.push('/stickers/create');
+  }
+
   Future<void> _openPackDetail(StickerPackSummary pack) async {
     setState(() {
       _loading = true;
@@ -141,9 +148,29 @@ class _StickerPickerBodyState extends ConsumerState<_StickerPickerBody> {
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 32),
             child: Center(
-              child: Text(
-                'Todavía no hay packs de stickers.',
-                style: AppTextStyles.body(color: AppColors.textMuted),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _controller.text.trim().isEmpty
+                        ? 'Todavía no hay packs de stickers.'
+                        : 'Sin resultados.',
+                    style: AppTextStyles.body(color: AppColors.textMuted),
+                  ),
+                  const SizedBox(height: 12),
+                  ElevatedButton.icon(
+                    onPressed: _createPack,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.coral,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(AppRadius.pill),
+                      ),
+                    ),
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('Crear tu propio pack'),
+                  ),
+                ],
               ),
             ),
           )
@@ -166,9 +193,34 @@ class _StickerPickerBodyState extends ConsumerState<_StickerPickerBody> {
                 mainAxisSpacing: 8,
                 crossAxisSpacing: 8,
               ),
-              itemCount: _packs.length,
+              itemCount: _packs.length + 1,
               itemBuilder: (context, i) {
-                final pack = _packs[i];
+                if (i == 0) {
+                  return GestureDetector(
+                    onTap: _createPack,
+                    child: Column(
+                      children: [
+                        Expanded(
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              border: Border.all(color: AppColors.borderStrong),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(Icons.add, color: AppColors.textMuted),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Crear pack',
+                          style: AppTextStyles.caption(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  );
+                }
+                final pack = _packs[i - 1];
                 return GestureDetector(
                   onTap: () => _openPackDetail(pack),
                   child: Column(
