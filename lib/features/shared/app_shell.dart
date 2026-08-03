@@ -9,6 +9,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_gradients.dart';
 import '../../core/theme/app_radius.dart';
 import '../../core/theme/app_text_styles.dart';
+import '../../data/models/communities_models.dart';
 import '../../data/models/user_models.dart';
 import '../communities/community_badge.dart';
 import 'menzo_avatar.dart';
@@ -234,6 +235,24 @@ class _CommunitySwitcherRow extends ConsumerWidget {
       builder: (sheetContext) => Consumer(
         builder: (context, ref, _) {
           final communityState = ref.watch(communityContextProvider);
+          final profile = ref.watch(authProvider).profile;
+          final globalRole = profile?.globalRole;
+          final isGlobalStaff = globalRole == GlobalRole.leader || globalRole == GlobalRole.master;
+          CommunityMembership? activeMembership;
+          for (final m in communityState.memberships) {
+            if (m.community.id == communityState.activeCommunityId) {
+              activeMembership = m.membership;
+              break;
+            }
+          }
+          // COMMUNITY_CURATOR+ — igual que CommunityPermissionEvaluator.requireCanEditAppearance
+          // en el backend (curador, moderador, admin u owner).
+          final isCommunityStaff = activeMembership != null &&
+              (activeMembership.communityRole == CommunityRole.curator ||
+                  activeMembership.communityRole == CommunityRole.moderator ||
+                  activeMembership.communityRole == CommunityRole.admin ||
+                  activeMembership.communityRole == CommunityRole.owner);
+          final canEditAppearance = communityState.activeCommunity != null && (isGlobalStaff || isCommunityStaff);
           return Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -266,6 +285,15 @@ class _CommunitySwitcherRow extends ConsumerWidget {
                   context.push('/communities');
                 },
               ),
+              if (canEditAppearance)
+                ListTile(
+                  leading: const Icon(Icons.palette_outlined, color: AppColors.textSecondary),
+                  title: Text('Editar apariencia', style: AppTextStyles.label()),
+                  onTap: () {
+                    Navigator.of(sheetContext).maybePop();
+                    context.push('/communities/${communityState.activeCommunity!.slug}/appearance');
+                  },
+                ),
             ],
           );
         },
