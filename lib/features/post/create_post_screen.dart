@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/providers/community_context_provider.dart';
 import '../../core/providers/repository_providers.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../data/models/post_models.dart';
@@ -90,6 +91,8 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
               .map((c) => c.text.trim())
               .where((t) => t.isNotEmpty)
               .toList(),
+        if (ref.read(communityContextProvider).activeCommunityId != null)
+          'communityId': ref.read(communityContextProvider).activeCommunityId,
       });
       ref.invalidate(feedProvider);
       if (mounted) Navigator.of(context).pop();

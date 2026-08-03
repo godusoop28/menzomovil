@@ -6,18 +6,22 @@ class ChatRepository {
   ChatRepository(this._client);
   final ApiClient _client;
 
-  Future<List<ChatRoom>> myRooms() async => (await _client.get<List<dynamic>>(
+  // communityId opcional (ver ChatController en menzoapi): filtra solo salas PUBLIC — las DIRECT
+  // (mensajes privados) el backend las devuelve siempre, sin importar communityId.
+  Future<List<ChatRoom>> myRooms({String? communityId}) async => (await _client.get<List<dynamic>>(
     '/api/chat/rooms',
+    query: {if (communityId != null) 'communityId': communityId},
   )).map((e) => ChatRoom.fromJson(e as Map<String, dynamic>)).toList();
 
-  Future<List<ChatRoom>> discover({String sort = 'recent'}) async =>
+  Future<List<ChatRoom>> discover({String sort = 'recent', String? communityId}) async =>
       (await _client.get<List<dynamic>>(
         '/api/chat/rooms/discover',
-        query: {'sort': sort},
+        query: {'sort': sort, if (communityId != null) 'communityId': communityId},
       )).map((e) => ChatRoom.fromJson(e as Map<String, dynamic>)).toList();
 
-  Future<List<ChatRoom>> liveRooms() async => (await _client.get<List<dynamic>>(
+  Future<List<ChatRoom>> liveRooms({String? communityId}) async => (await _client.get<List<dynamic>>(
     '/api/chat/rooms/live',
+    query: {if (communityId != null) 'communityId': communityId},
   )).map((e) => ChatRoom.fromJson(e as Map<String, dynamic>)).toList();
 
   Future<ChatRoom> getRoom(String id) async => ChatRoom.fromJson(

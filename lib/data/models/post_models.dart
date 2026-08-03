@@ -108,6 +108,7 @@ class Post {
     required this.createdAt,
     required this.blocks,
     required this.hidden,
+    required this.communityId,
   });
 
   final String id;
@@ -129,6 +130,7 @@ class Post {
   final DateTime createdAt;
   final List<PostBlock> blocks;
   final bool hidden;
+  final String? communityId;
 
   factory Post.fromJson(Map<String, dynamic> json) => Post(
     id: json['id'] as String,
@@ -158,6 +160,7 @@ class Post {
         .map((e) => PostBlock.fromJson(e as Map<String, dynamic>))
         .toList(),
     hidden: json['hidden'] as bool? ?? false,
+    communityId: json['communityId'] as String?,
   );
 
   Post copyWith({
@@ -187,6 +190,7 @@ class Post {
     createdAt: createdAt,
     blocks: blocks,
     hidden: hidden ?? this.hidden,
+    communityId: communityId,
   );
 }
 

@@ -6,19 +6,21 @@ class PostRepository {
   PostRepository(this._client);
   final ApiClient _client;
 
-  Future<PostPage> list({int page = 0, int size = 20}) async =>
+  // communityId opcional (ver PostController en menzoapi): sin él no filtra nada. Los clientes
+  // actualizados siempre mandan la comunidad activa para no mezclar publicaciones entre comunidades.
+  Future<PostPage> list({String? communityId, int page = 0, int size = 20}) async =>
       PageResponse.fromJson(
         await _client.get<Map<String, dynamic>>(
           '/api/posts',
-          query: {'page': page, 'size': size},
+          query: {if (communityId != null) 'communityId': communityId, 'page': page, 'size': size},
         ),
         Post.fromJson,
       );
 
-  Future<PostPage> featured({int page = 0}) async => PageResponse.fromJson(
+  Future<PostPage> featured({String? communityId, int page = 0}) async => PageResponse.fromJson(
     await _client.get<Map<String, dynamic>>(
       '/api/posts/featured',
-      query: {'page': page},
+      query: {if (communityId != null) 'communityId': communityId, 'page': page},
     ),
     Post.fromJson,
   );
@@ -31,11 +33,11 @@ class PostRepository {
     Post.fromJson,
   );
 
-  Future<PostPage> search(String query, {int page = 0}) async =>
+  Future<PostPage> search(String query, {String? communityId, int page = 0}) async =>
       PageResponse.fromJson(
         await _client.get<Map<String, dynamic>>(
           '/api/posts/search',
-          query: {'query': query, 'page': page},
+          query: {'query': query, if (communityId != null) 'communityId': communityId, 'page': page},
         ),
         Post.fromJson,
       );

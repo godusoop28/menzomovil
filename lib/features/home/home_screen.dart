@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/permissions/startup_permissions.dart';
 import '../../core/providers/auth_provider.dart';
+import '../../core/providers/community_context_provider.dart';
 import '../../core/providers/repository_providers.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_radius.dart';
@@ -24,16 +25,27 @@ final communityConfigProvider = FutureProvider(
   (ref) => ref.watch(communityRepositoryProvider).config(),
 );
 final liveRoomsProvider = FutureProvider(
-  (ref) => ref.watch(chatRepositoryProvider).liveRooms(),
+  (ref) => ref.watch(chatRepositoryProvider).liveRooms(
+        communityId: ref.watch(communityContextProvider).activeCommunityId,
+      ),
 );
+// ref.watch(communityContextProvider) hace que Riverpod recalcule solo (nuevo fetch, ya acotado
+// a la comunidad activa) apenas cambia — nunca queda mezclado contenido de la comunidad anterior.
 final feedProvider = FutureProvider.autoDispose(
-  (ref) => ref.watch(postRepositoryProvider).list(),
+  (ref) => ref.watch(postRepositoryProvider).list(
+        communityId: ref.watch(communityContextProvider).activeCommunityId,
+      ),
 );
 final featuredPostsProvider = FutureProvider.autoDispose(
-  (ref) => ref.watch(postRepositoryProvider).featured(),
+  (ref) => ref.watch(postRepositoryProvider).featured(
+        communityId: ref.watch(communityContextProvider).activeCommunityId,
+      ),
 );
 final discoverRoomsProvider = FutureProvider.family.autoDispose(
-  (ref, String sort) => ref.watch(chatRepositoryProvider).discover(sort: sort),
+  (ref, String sort) => ref.watch(chatRepositoryProvider).discover(
+        sort: sort,
+        communityId: ref.watch(communityContextProvider).activeCommunityId,
+      ),
 );
 
 enum _HomeTab { recientes, destacados, descubrir }

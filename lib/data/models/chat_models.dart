@@ -96,6 +96,7 @@ class ChatRoom {
     required this.liveSummary,
     required this.createdAt,
     required this.lastMessage,
+    required this.communityId,
   });
 
   final String id;
@@ -119,6 +120,7 @@ class ChatRoom {
   final ChatRoomLiveSummary? liveSummary;
   final DateTime createdAt;
   final ChatRoomLastMessage? lastMessage;
+  final String? communityId;
 
   factory ChatRoom.fromJson(Map<String, dynamic> json) => ChatRoom(
     id: json['id'] as String,
@@ -154,6 +156,7 @@ class ChatRoom {
             json['lastMessage'] as Map<String, dynamic>,
           )
         : null,
+    communityId: json['communityId'] as String?,
   );
 }
 

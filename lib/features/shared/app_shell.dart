@@ -3,12 +3,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/providers/auth_provider.dart';
+import '../../core/providers/community_context_provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_gradients.dart';
 import '../../core/theme/app_radius.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../data/models/user_models.dart';
+import '../communities/community_badge.dart';
 import 'menzo_avatar.dart';
+import 'menzo_sheet.dart';
 
 /// Clave del [Scaffold] del shell — los botones "menú" de Home/Perfil viven en el AppBar de
 /// cada pantalla del tab (su propio Scaffold anidado), así que no pueden usar
@@ -136,6 +139,11 @@ class MenzoDrawer extends ConsumerWidget {
                     ],
                   ),
                 ),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 20),
+                  child: _CommunitySwitcherRow(),
+                ),
+                const SizedBox(height: 12),
                 const Divider(height: 1, color: AppColors.borderSoft),
                 Expanded(
                   child: ListView(
@@ -168,6 +176,88 @@ class MenzoDrawer extends ConsumerWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Selector de comunidad en el drawer — ver Contexto §8/§23 del pedido original ("icono de
+/// comunidad, nombre, flecha de cambio" en el encabezado; al tocar, bottom sheet con mis
+/// comunidades, favoritas, explorar). Versión mínima: mis comunidades + explorar.
+class _CommunitySwitcherRow extends ConsumerWidget {
+  const _CommunitySwitcherRow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final communityState = ref.watch(communityContextProvider);
+    final active = communityState.activeCommunity;
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(AppRadius.md),
+      onTap: () => _openSwitcherSheet(context, ref),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Row(
+          children: [
+            CommunityBadge(name: active?.name, iconUrl: active?.iconUrl, color: active?.primaryColor, size: 28),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                communityState.loading ? 'Cargando…' : (active?.name ?? 'Elegí una comunidad'),
+                style: AppTextStyles.label(),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const Icon(Icons.unfold_more, size: 18, color: AppColors.textMuted),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openSwitcherSheet(BuildContext context, WidgetRef ref) {
+    showMenzoSheet<void>(
+      context: context,
+      title: 'Comunidades',
+      builder: (sheetContext) => Consumer(
+        builder: (context, ref, _) {
+          final communityState = ref.watch(communityContextProvider);
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final m in communityState.memberships)
+                ListTile(
+                  leading: CommunityBadge(name: m.community.name, iconUrl: m.community.iconUrl, color: m.community.primaryColor, size: 32),
+                  title: Text(m.community.name, style: AppTextStyles.label()),
+                  trailing: m.community.id == communityState.activeCommunityId
+                      ? const Icon(Icons.check, color: AppColors.orange)
+                      : null,
+                  onTap: () {
+                    ref.read(communityContextProvider.notifier).switchCommunity(m.community.id);
+                    Navigator.of(sheetContext).maybePop();
+                  },
+                ),
+              if (communityState.memberships.isEmpty && !communityState.loading)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Text(
+                    'Todavía no sos miembro de ninguna comunidad.',
+                    style: AppTextStyles.caption(),
+                  ),
+                ),
+              const Divider(height: 1, color: AppColors.borderSoft),
+              ListTile(
+                leading: const Icon(Icons.explore_outlined, color: AppColors.cyan),
+                title: Text('Explorar comunidades', style: AppTextStyles.label(color: AppColors.cyan)),
+                onTap: () {
+                  Navigator.of(sheetContext).maybePop();
+                  context.push('/communities');
+                },
+              ),
+            ],
+          );
+        },
       ),
     );
   }

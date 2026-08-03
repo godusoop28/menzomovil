@@ -41,4 +41,12 @@ class CommunitiesRepository {
 
   Future<void> leave(String communityId) =>
       _client.post<void>('/api/communities/$communityId/leave');
+
+  // COMMUNITY_ADMIN+ de esa comunidad, o cuenta global LEADER+ — ver CommunitiesController en
+  // menzoapi. body: iconUrl/logoUrl/coverUrl/backgroundUrl/bannerUrl/primaryColor/
+  // secondaryColor/accentColor — "" limpia el campo, ausente lo deja sin cambios.
+  Future<CommunityDetail> updateAppearance(String communityId, Map<String, dynamic> body) async =>
+      CommunityDetail.fromJson(
+        await _client.patch<Map<String, dynamic>>('/api/communities/$communityId/appearance', body: body),
+      );
 }

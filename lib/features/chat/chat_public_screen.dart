@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/providers/community_context_provider.dart';
 import '../../core/providers/repository_providers.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import 'chat_room_tile.dart';
 
 final discoverRoomsProvider = FutureProvider.autoDispose(
-  (ref) => ref.watch(chatRepositoryProvider).discover(),
+  (ref) => ref.watch(chatRepositoryProvider).discover(
+        communityId: ref.watch(communityContextProvider).activeCommunityId,
+      ),
 );
 
 /// 1:1 con menzoweb/app/(app)/chat/public/page.tsx.

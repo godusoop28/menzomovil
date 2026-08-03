@@ -15,6 +15,8 @@ import '../../features/chat/chat_public_screen.dart';
 import '../../features/chat/chat_room_screen.dart';
 import '../../features/chat/create_sticker_pack_screen.dart';
 import '../../features/chat/room_members_screen.dart';
+import '../../features/communities/communities_explore_screen.dart';
+import '../../features/communities/community_appearance_screen.dart';
 import '../../features/events/event_detail_screen.dart';
 import '../../features/events/events_screen.dart';
 import '../../features/home/home_screen.dart';
@@ -166,6 +168,15 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/stickers/create',
         builder: (context, state) => const CreateStickerPackScreen(),
+      ),
+      GoRoute(
+        path: '/communities',
+        builder: (context, state) => const CommunitiesExploreScreen(),
+      ),
+      GoRoute(
+        path: '/communities/:slug/appearance',
+        builder: (context, state) =>
+            CommunityAppearanceScreen(slug: state.pathParameters['slug']!),
       ),
       GoRoute(
         path: '/admin',

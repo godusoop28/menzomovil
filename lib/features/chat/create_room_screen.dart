@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/providers/community_context_provider.dart';
 import '../../core/providers/repository_providers.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../shared/gradient_button.dart';
@@ -44,6 +45,8 @@ class _CreateRoomScreenState extends ConsumerState<CreateRoomScreen> {
           'description': _descriptionController.text.trim(),
         if (_topicController.text.trim().isNotEmpty)
           'topic': _topicController.text.trim(),
+        if (ref.read(communityContextProvider).activeCommunityId != null)
+          'communityId': ref.read(communityContextProvider).activeCommunityId,
       });
       ref.invalidate(myRoomsProvider);
       if (mounted) {
