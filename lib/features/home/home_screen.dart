@@ -13,7 +13,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_radius.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../data/models/chat_models.dart';
-import '../../data/models/community_models.dart';
+import '../../data/models/communities_models.dart';
 import '../chat/chat_room_tile.dart';
 import '../chat/create_room_screen.dart';
 import '../post/create_post_screen.dart';
@@ -22,9 +22,6 @@ import '../shared/menzo_avatar.dart';
 import '../shared/segmented_tabs.dart';
 import 'post_card.dart';
 
-final communityConfigProvider = FutureProvider(
-  (ref) => ref.watch(communityRepositoryProvider).config(),
-);
 final liveRoomsProvider = FutureProvider(
   (ref) => ref.watch(chatRepositoryProvider).liveRooms(
         communityId: ref.watch(communityContextProvider).activeCommunityId,
@@ -99,7 +96,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final auth = ref.watch(authProvider);
-    final config = ref.watch(communityConfigProvider);
     final liveRooms = ref.watch(liveRoomsProvider);
     final feed = ref.watch(feedProvider);
     final activeCommunityDetail = ref.watch(communityContextProvider).activeCommunityDetail;
@@ -144,23 +140,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             : null,
         child: RefreshIndicator(
         onRefresh: () async {
-          ref.invalidate(communityConfigProvider);
           ref.invalidate(liveRoomsProvider);
           ref.invalidate(feedProvider);
           ref.invalidate(featuredPostsProvider);
           ref.invalidate(discoverRoomsProvider(_roomSort));
+          await ref.read(communityContextProvider.notifier).refreshActiveDetail();
         },
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            config.when(
-              data: (c) => _CommunityHero(
-                config: c,
-                profileName: auth.profile?.displayName ?? '',
-              ),
-              loading: () => const SizedBox(height: 120),
-              error: (e, st) => const SizedBox.shrink(),
-            ),
+            activeCommunityDetail == null
+                ? const SizedBox.shrink()
+                : _CommunityHero(
+                    community: activeCommunityDetail,
+                    profileName: auth.profile?.displayName ?? '',
+                  ),
             const SizedBox(height: 20),
             liveRooms.when(
               data: (rooms) => rooms.isEmpty
@@ -446,21 +440,48 @@ class _SortChip extends StatelessWidget {
 }
 
 class _CommunityHero extends StatelessWidget {
-  const _CommunityHero({required this.config, required this.profileName});
-  final CommunityConfig config;
+  const _CommunityHero({required this.community, required this.profileName});
+  final CommunityDetail community;
   final String profileName;
 
   @override
   Widget build(BuildContext context) {
+    final heroImage = (community.coverUrl?.isNotEmpty ?? false)
+        ? community.coverUrl
+        : (community.bannerUrl?.isNotEmpty ?? false)
+            ? community.bannerUrl
+            : null;
+    final primary = _parseHeroColor(community.primaryColor) ?? const Color(0xFFE74C3C);
+    final secondary = _parseHeroColor(community.secondaryColor) ?? const Color(0xFF2C3E50);
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(AppRadius.xl),
       child: Stack(
         children: [
           Positioned.fill(
-            child: Image.asset(
-              'assets/banners/banner-community.png',
-              fit: BoxFit.cover,
-            ),
+            child: heroImage != null
+                ? CachedNetworkImage(
+                    imageUrl: heroImage,
+                    fit: BoxFit.cover,
+                    errorWidget: (context, url, error) => DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [primary, secondary],
+                        ),
+                      ),
+                    ),
+                  )
+                : DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [primary, secondary],
+                      ),
+                    ),
+                  ),
           ),
           const Positioned.fill(child: ColoredBox(color: Color(0x6B07090D))),
           Padding(
@@ -474,7 +495,9 @@ class _CommunityHero extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  config.subtitle ?? 'Bienvenido a ${config.name}',
+                  (community.shortDescription?.isNotEmpty ?? false)
+                      ? community.shortDescription!
+                      : 'Bienvenido a ${community.name}',
                   style: AppTextStyles.body(color: Colors.white70),
                 ),
                 const SizedBox(height: 12),
@@ -483,17 +506,17 @@ class _CommunityHero extends StatelessWidget {
                     const Icon(Icons.circle, size: 8, color: Colors.white70),
                     const SizedBox(width: 6),
                     Text(
-                      '${config.onlineCount} conectados · ${config.memberCount} miembros',
+                      '${community.onlineMemberCount} conectados · ${community.memberCount} miembros',
                       style: AppTextStyles.caption(color: Colors.white70),
                     ),
                   ],
                 ),
-                if (config.tags.isNotEmpty) ...[
+                if (community.tags.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
-                    children: config.tags
+                    children: community.tags
                         .map(
                           (tag) => Container(
                             padding: const EdgeInsets.symmetric(
@@ -601,5 +624,14 @@ class _LiveRoomsCarousel extends StatelessWidget {
         },
       ),
     );
+  }
+}
+
+Color? _parseHeroColor(String? hex) {
+  if (hex == null || hex.isEmpty) return null;
+  try {
+    return Color(int.parse(hex.replaceFirst('#', '0xFF')));
+  } catch (_) {
+    return null;
   }
 }

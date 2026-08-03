@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/providers/auth_provider.dart';
+import '../../core/providers/community_context_provider.dart';
 import '../../core/providers/repository_providers.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_radius.dart';
@@ -212,6 +213,10 @@ class _CommunityAppearanceScreenState extends ConsumerState<CommunityAppearanceS
         'decorations': _decorations,
       });
       await repo.updateNavigation(_community!.id, _nav);
+      // Sin esto, el drawer/feed/bandeja de mensajes seguían mostrando la versión vieja del tema
+      // hasta el próximo cambio de comunidad o reinicio — communityContextProvider cachea
+      // activeCommunityDetail y nadie lo invalidaba al guardar acá.
+      await ref.read(communityContextProvider.notifier).refreshActiveDetail();
       if (mounted) context.pop();
     } catch (_) {
       if (mounted) setState(() => _error = 'No pudimos guardar los cambios.');

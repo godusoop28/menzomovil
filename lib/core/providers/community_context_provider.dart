@@ -79,7 +79,7 @@ class CommunityContextNotifier extends Notifier<CommunityContextState> {
         activeCommunityId: () => nextActiveId,
         loading: false,
       );
-      _refreshActiveDetail();
+      refreshActiveDetail();
     } catch (_) {
       state = state.copyWith(loading: false, error: () => 'No pudimos cargar tus comunidades.');
     }
@@ -89,13 +89,13 @@ class CommunityContextNotifier extends Notifier<CommunityContextState> {
     if (!state.memberships.any((m) => m.community.id == communityId)) return;
     state = state.copyWith(activeCommunityId: () => communityId, activeCommunityDetail: () => null);
     LocalPrefs.instance.setActiveCommunityId(communityId);
-    _refreshActiveDetail();
+    refreshActiveDetail();
   }
 
   /// Trae CommunityDetail (con themeConfig/navigationConfig) para la comunidad activa —
   /// deliberadamente sin bloquear el switch/join, solo alimenta fondos/decoraciones decorativos;
   /// si falla, la app sigue funcionando con activeCommunity (el summary).
-  Future<void> _refreshActiveDetail() async {
+  Future<void> refreshActiveDetail() async {
     final active = state.activeCommunity;
     if (active == null) return;
     try {

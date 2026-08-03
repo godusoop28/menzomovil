@@ -199,6 +199,7 @@ class CommunityDetail {
     required this.textColor,
     required this.surfaceColor,
     required this.memberCount,
+    required this.onlineMemberCount,
     required this.featured,
     required this.official,
     required this.allowJoinRequests,
@@ -231,6 +232,7 @@ class CommunityDetail {
   final String? textColor;
   final String? surfaceColor;
   final int memberCount;
+  final int onlineMemberCount;
   final bool featured;
   final bool official;
   final bool allowJoinRequests;
@@ -263,6 +265,7 @@ class CommunityDetail {
     textColor: json['textColor'] as String?,
     surfaceColor: json['surfaceColor'] as String?,
     memberCount: json['memberCount'] as int? ?? 0,
+    onlineMemberCount: json['onlineMemberCount'] as int? ?? 0,
     featured: json['featured'] as bool? ?? false,
     official: json['official'] as bool? ?? false,
     allowJoinRequests: json['allowJoinRequests'] as bool? ?? true,
