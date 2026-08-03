@@ -208,6 +208,8 @@ class CommunityDetail {
     required this.allowMemberPosts,
     required this.minimumGlobalLevelToJoin,
     required this.minimumGlobalLevelToPost,
+    required this.themeConfig,
+    required this.navigationConfig,
     required this.myMembership,
   });
 
@@ -238,6 +240,8 @@ class CommunityDetail {
   final bool allowMemberPosts;
   final int minimumGlobalLevelToJoin;
   final int minimumGlobalLevelToPost;
+  final Map<String, dynamic> themeConfig;
+  final Map<String, dynamic> navigationConfig;
   final CommunityMembership? myMembership;
 
   factory CommunityDetail.fromJson(Map<String, dynamic> json) => CommunityDetail(
@@ -268,6 +272,8 @@ class CommunityDetail {
     allowMemberPosts: json['allowMemberPosts'] as bool? ?? true,
     minimumGlobalLevelToJoin: json['minimumGlobalLevelToJoin'] as int? ?? 0,
     minimumGlobalLevelToPost: json['minimumGlobalLevelToPost'] as int? ?? 0,
+    themeConfig: (json['themeConfig'] as Map?)?.cast<String, dynamic>() ?? const {},
+    navigationConfig: (json['navigationConfig'] as Map?)?.cast<String, dynamic>() ?? const {},
     myMembership: json['myMembership'] != null
         ? CommunityMembership.fromJson(json['myMembership'] as Map<String, dynamic>)
         : null,

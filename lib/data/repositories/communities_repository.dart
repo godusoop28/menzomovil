@@ -49,4 +49,23 @@ class CommunitiesRepository {
       CommunityDetail.fromJson(
         await _client.patch<Map<String, dynamic>>('/api/communities/$communityId/appearance', body: body),
       );
+
+  // Reemplazo completo de themeConfig (fondos adicionales de feed/chat, estilo de encabezado/
+  // tarjetas, decoraciones) — mismos permisos que updateAppearance.
+  Future<CommunityDetail> updateTheme(String communityId, Map<String, dynamic> themeConfig) async =>
+      CommunityDetail.fromJson(
+        await _client.patch<Map<String, dynamic>>(
+          '/api/communities/$communityId/theme',
+          body: {'themeConfig': themeConfig},
+        ),
+      );
+
+  // Reemplazo completo de navigationConfig (secciones visibles, orden, etiquetas).
+  Future<CommunityDetail> updateNavigation(String communityId, Map<String, dynamic> navigationConfig) async =>
+      CommunityDetail.fromJson(
+        await _client.patch<Map<String, dynamic>>(
+          '/api/communities/$communityId/navigation',
+          body: {'navigationConfig': navigationConfig},
+        ),
+      );
 }
