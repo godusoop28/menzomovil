@@ -20,6 +20,7 @@ class LocalPrefs {
   static const _keyVoiceBubbleFractionX = 'menzo.voiceBubbleFractionX';
   static const _keyVoiceBubbleFractionY = 'menzo.voiceBubbleFractionY';
   static const _keyDjMiniSizePreset = 'menzo.djMiniSizePreset';
+  static const _keyActiveCommunityId = 'menzo.activeCommunityId';
 
   Future<String?> get cachedProfileJson async =>
       (await _ensure()).getString(_keyCachedProfileJson);
@@ -62,6 +63,19 @@ class LocalPrefs {
       (await _ensure()).getString(_keyDjMiniSizePreset);
   Future<void> setDjMiniSizePreset(String value) async =>
       (await _ensure()).setString(_keyDjMiniSizePreset, value);
+
+  /// Última comunidad activa (ver CommunityContextNotifier) — puramente de navegación, nunca
+  /// afecta permisos: siempre se revalida contra las membresías reales del usuario al leerse.
+  Future<String?> get activeCommunityId async =>
+      (await _ensure()).getString(_keyActiveCommunityId);
+  Future<void> setActiveCommunityId(String? value) async {
+    final prefs = await _ensure();
+    if (value == null) {
+      await prefs.remove(_keyActiveCommunityId);
+    } else {
+      await prefs.setString(_keyActiveCommunityId, value);
+    }
+  }
 
   Future<void> clear() async => (await _ensure()).clear();
 }
