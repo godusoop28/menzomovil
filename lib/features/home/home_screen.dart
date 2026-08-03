@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -101,6 +102,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final config = ref.watch(communityConfigProvider);
     final liveRooms = ref.watch(liveRoomsProvider);
     final feed = ref.watch(feedProvider);
+    final activeCommunityDetail = ref.watch(communityContextProvider).activeCommunityDetail;
+    final feedBackgroundUrl =
+        (activeCommunityDetail?.themeConfig['feedBackgroundUrl'] as String?) ?? activeCommunityDetail?.backgroundUrl;
 
     return Scaffold(
       appBar: AppBar(
@@ -127,7 +131,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
         ],
       ),
-      body: RefreshIndicator(
+      body: Container(
+        decoration: (feedBackgroundUrl != null && feedBackgroundUrl.isNotEmpty)
+            ? BoxDecoration(
+                image: DecorationImage(
+                  image: CachedNetworkImageProvider(feedBackgroundUrl),
+                  fit: BoxFit.cover,
+                  colorFilter: const ColorFilter.mode(Color(0xE0070A0D), BlendMode.darken),
+                  onError: (_, _) {},
+                ),
+              )
+            : null,
+        child: RefreshIndicator(
         onRefresh: () async {
           ref.invalidate(communityConfigProvider);
           ref.invalidate(liveRoomsProvider);
@@ -381,6 +396,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
             },
           ],
+        ),
         ),
       ),
       floatingActionButton: _tab == _HomeTab.recientes

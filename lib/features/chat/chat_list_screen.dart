@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -24,6 +25,9 @@ class ChatListScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final rooms = ref.watch(myRoomsProvider);
+    final activeCommunityDetail = ref.watch(communityContextProvider).activeCommunityDetail;
+    final chatBackgroundUrl =
+        (activeCommunityDetail?.themeConfig['chatBackgroundUrl'] as String?) ?? activeCommunityDetail?.backgroundUrl;
     return Scaffold(
       appBar: AppBar(
         title: Text('Chats', style: AppTextStyles.h2()),
@@ -42,7 +46,18 @@ class ChatListScreen extends ConsumerWidget {
         backgroundColor: AppColors.orange,
         child: const Icon(Icons.add_comment_outlined, color: Colors.black),
       ),
-      body: RefreshIndicator(
+      body: Container(
+        decoration: (chatBackgroundUrl != null && chatBackgroundUrl.isNotEmpty)
+            ? BoxDecoration(
+                image: DecorationImage(
+                  image: CachedNetworkImageProvider(chatBackgroundUrl),
+                  fit: BoxFit.cover,
+                  colorFilter: const ColorFilter.mode(Color(0xE0070A0D), BlendMode.darken),
+                  onError: (_, _) {},
+                ),
+              )
+            : null,
+        child: RefreshIndicator(
         onRefresh: () async => ref.invalidate(myRoomsProvider),
         child: rooms.when(
           data: (list) {
@@ -82,6 +97,7 @@ class ChatListScreen extends ConsumerWidget {
               style: AppTextStyles.body(color: AppColors.coral),
             ),
           ),
+        ),
         ),
       ),
     );

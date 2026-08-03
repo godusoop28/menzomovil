@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -70,6 +71,7 @@ class MenzoDrawer extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final profile = ref.watch(authProvider).profile;
+    final navBackgroundUrl = ref.watch(communityContextProvider).activeCommunityDetail?.themeConfig['navBackgroundUrl'] as String?;
     final primaryItems = <(IconData, String, String)>[
       (Icons.home_rounded, 'Inicio', '/'),
       (Icons.groups_rounded, 'Miembros', '/members'),
@@ -96,10 +98,19 @@ class MenzoDrawer extends ConsumerWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          Image.asset(
-            'assets/backgrounds/background-drawer.png',
-            fit: BoxFit.cover,
-          ),
+          (navBackgroundUrl != null && navBackgroundUrl.isNotEmpty)
+              ? CachedNetworkImage(
+                  imageUrl: navBackgroundUrl,
+                  fit: BoxFit.cover,
+                  errorWidget: (context, url, error) => Image.asset(
+                    'assets/backgrounds/background-drawer.png',
+                    fit: BoxFit.cover,
+                  ),
+                )
+              : Image.asset(
+                  'assets/backgrounds/background-drawer.png',
+                  fit: BoxFit.cover,
+                ),
           const ColoredBox(color: Color(0xB007090D)),
           SafeArea(
             child: Column(

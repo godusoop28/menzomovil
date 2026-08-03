@@ -44,8 +44,9 @@ const _colorSlots = [
 ];
 
 const _themeImageSlots = [
+  ('navBackgroundUrl', 'Fondo del menú/navegación'),
   ('feedBackgroundUrl', 'Fondo del feed'),
-  ('chatBackgroundUrl', 'Fondo de los chats'),
+  ('chatBackgroundUrl', 'Fondo de la bandeja de mensajes'),
 ];
 
 const _headerStyles = ['default', 'compact', 'banner', 'minimal'];
@@ -109,6 +110,7 @@ class _CommunityAppearanceScreenState extends ConsumerState<CommunityAppearanceS
         _colorControllers['accentColor']!.text = detail.accentColor ?? '';
 
         final theme = detail.themeConfig;
+        _themeImages['navBackgroundUrl'] = (theme['navBackgroundUrl'] as String?) ?? '';
         _themeImages['feedBackgroundUrl'] = (theme['feedBackgroundUrl'] as String?) ?? '';
         _themeImages['chatBackgroundUrl'] = (theme['chatBackgroundUrl'] as String?) ?? '';
         _headerStyle = (theme['headerStyle'] as String?) ?? _headerStyles.first;
@@ -141,8 +143,14 @@ class _CommunityAppearanceScreenState extends ConsumerState<CommunityAppearanceS
     final globalRole = profile?.globalRole;
     final isGlobalStaff = globalRole == GlobalRole.leader || globalRole == GlobalRole.master;
     final role = _community!.myMembership?.communityRole;
-    final isCommunityAdmin = role == CommunityRole.admin || role == CommunityRole.owner;
-    return isGlobalStaff || isCommunityAdmin;
+    // COMMUNITY_CURATOR+ — igual que CommunityPermissionEvaluator.requireCanEditAppearance en
+    // el backend (curador, moderador, admin u owner).
+    final isCommunityStaff =
+        role == CommunityRole.curator ||
+        role == CommunityRole.moderator ||
+        role == CommunityRole.admin ||
+        role == CommunityRole.owner;
+    return isGlobalStaff || isCommunityStaff;
   }
 
   Future<String?> _uploadImage() async {
@@ -193,6 +201,8 @@ class _CommunityAppearanceScreenState extends ConsumerState<CommunityAppearanceS
         for (final (key, _) in _colorSlots) key: _colorControllers[key]!.text.trim(),
       });
       await repo.updateTheme(_community!.id, {
+        if (_themeImages['navBackgroundUrl']?.isNotEmpty ?? false)
+          'navBackgroundUrl': _themeImages['navBackgroundUrl'],
         if (_themeImages['feedBackgroundUrl']?.isNotEmpty ?? false)
           'feedBackgroundUrl': _themeImages['feedBackgroundUrl'],
         if (_themeImages['chatBackgroundUrl']?.isNotEmpty ?? false)

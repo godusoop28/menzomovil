@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/network/api_exception.dart';
 import '../../core/providers/community_context_provider.dart';
 import '../../core/providers/repository_providers.dart';
 import '../../core/theme/app_colors.dart';
@@ -78,10 +79,7 @@ class CommunitiesExploreScreen extends ConsumerWidget {
                         )
                       else
                         ElevatedButton(
-                          onPressed: () async {
-                            await ref.read(communityContextProvider.notifier).joinCommunity(community.id);
-                            ref.invalidate(_communitiesListProvider);
-                          },
+                          onPressed: () => _join(context, ref, community.id),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Color(_parseColor(community.primaryColor)),
                             foregroundColor: Colors.white,
@@ -96,6 +94,20 @@ class CommunitiesExploreScreen extends ConsumerWidget {
           );
         },
       ),
+    );
+  }
+}
+
+Future<void> _join(BuildContext context, WidgetRef ref, String communityId) async {
+  final messenger = ScaffoldMessenger.of(context);
+  try {
+    await ref.read(communityContextProvider.notifier).joinCommunity(communityId);
+    ref.invalidate(_communitiesListProvider);
+  } on ApiException catch (e) {
+    messenger.showSnackBar(SnackBar(content: Text(e.message), backgroundColor: AppColors.coral));
+  } catch (_) {
+    messenger.showSnackBar(
+      const SnackBar(content: Text('No pudimos unirte a esta comunidad.'), backgroundColor: AppColors.coral),
     );
   }
 }
